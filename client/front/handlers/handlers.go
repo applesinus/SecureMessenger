@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"messenger/back/users"
+	"messengerClient/back/users"
 	"net/http"
 )
 

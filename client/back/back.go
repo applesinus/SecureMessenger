@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"messenger/front/handlers"
+	"messengerClient/front/handlers"
 	"net/http"
 	"runtime"
 	"strconv"

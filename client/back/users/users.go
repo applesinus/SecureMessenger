@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"context"
 	"log"
-	"messenger/back/crypto"
+	"messengerClient/back/crypto"
 	"net/http"
 	"os"
 	"strings"

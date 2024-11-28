@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"html/template"
 	"log"
-	"messenger/back/crypto"
-	"messenger/back/users"
+	"messengerClient/back/crypto"
+	"messengerClient/back/users"
 	"net/http"
 )
 
