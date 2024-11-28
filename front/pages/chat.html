@@ -1,0 +1,163 @@
+{{define "title"}}Chat with {{.Name}}{{end}}
+
+{{define "styles"}}
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        .container {
+            display: flex;
+            justify-content: center;
+            max-height: 50%;
+            width: 100%;
+        }
+        .container div {
+            border: 1px solid #ccc;
+            width: 15%;
+            margin: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 10px;
+            border-width: 2px;
+            border-color: #fff;
+        }
+        .operations {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .operations form {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #fff;
+            border-radius: 5px;
+        }
+        input {
+            min-width: 50px;
+            max-width: 500px;
+            height: 25px;
+            margin: 0 10px;
+            padding: 5px;
+            border: 1px solid #fff;
+            border-radius: 3px;
+        }
+        select {
+            min-width: 100px;
+            max-width: 500px;
+            height: 25px;
+            margin: 0 10px;
+            padding: 5px;
+            border: 1px solid #fff;
+            border-radius: 3px;
+        }
+        button {
+            height: 35px;
+            padding: 0 10px;
+            background-color: #4CAF50;
+            color: #fff;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .divider {
+            width: 100%;
+            border-top: 2px solid #ccc;
+            margin: 20px 0;
+        }
+        .scroll-box {
+            padding: 10px;
+            max-height: 500px;
+            width: 700px;
+            overflow-y: scroll;
+            margin-top: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+        .scroll-box table {
+            table-layout: fixed;
+        }
+        .scroll-box table td {
+            word-wrap: break-word;
+            width: 200px;
+            max-width: 200px;
+            text-align: left;
+        }
+
+    </style>
+{{end}}
+
+{{define "imports"}}
+{{end}}
+
+{{define "body"}}
+    <div class="chat">
+        <p>
+            <h1>
+                Chat with {{.Name}}
+            </h1>
+        </p>
+
+        <div id="scroll-box" class="scroll-box">
+            <table>
+                {{range $i, $message := .Messages}}
+                    {{if eq $message.Author $.User}}
+                        <tr>
+                            <td></td>
+                            <td colspan="2" style="text-align: right;">
+                                <p style="display: inline-block; text-align: left;">
+                                    <b style="color: #e86701;">You: </b>{{$message.Message}}
+                                </p>
+                            </td>
+                        </tr>
+                    {{else}}
+                        <tr>
+                            <td colspan="2">
+                                <p>
+                                    <b style="color: #e86701;">{{$message.Author}}: </b>{{$message.Message}}
+                                </p>
+                            </td>
+                            <td></td>
+                        </tr>
+                    {{end}}
+                {{end}}
+            </table>
+        </div>
+
+        <form id="send" method="post">
+            <p>
+                <input name="message" type="text" placeholder="Type your message">
+                <button type="button">Attach</button>
+                <button type="submit">Send</button>
+            </p>
+        </form>
+
+        <p>
+            <button type="button" onclick="scrollDown()">Scroll to bottom</button>
+        </p>
+    </div>
+{{end}}
+
+{{define "afterbody"}}
+<script>
+    function scrollDown() {
+        const box = document.getElementById('scroll-box');
+        box.scrollTop = box.scrollHeight;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        scrollDown();
+    });
+</script>
+{{end}}

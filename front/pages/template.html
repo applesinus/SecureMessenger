@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{template "title" .}} - Secure Messenger</title>
+    {{template "styles" .}}
+    {{template "imports" .}}
+    <link rel="stylesheet" type="text/css" href="/getpage/style.css?v=6">
+</head>
+<body>
+    <header>
+        <div>
+            <h1><a href="/">Secure Messenger</a></h1>
+            <p>University project</p>
+        </div>
+
+        {{template "logout" .}}
+    </header>
+
+    <main>
+        {{template "body" .}}
+    </main>
+
+    <footer>
+        <div class="footer-divider" style="width: 100%; margin: 20px 0; border-top: 2px solid #ccc"></div>
+        <div style="text-align: center">
+            &copy; 2024 Dmitry Rosin. MIT License.
+        </div>
+    </footer>
+</body>
+{{template "afterbody" .}}
+</html>

@@ -1,0 +1,16 @@
+{{define "logout"}}
+<div>
+    <chats>
+        <a href="/chats/regular">Chats</a>
+        <a href="/chats/secret">Secret chats</a>
+        <a href="/chats/new">New chat</a>
+    </chats>
+</div>
+
+<div>
+    <account>
+        <p>{{.User}}</p>
+        <a href="/logout">Log out</a>
+    </account>
+</div>
+{{end}}

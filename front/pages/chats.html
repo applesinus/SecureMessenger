@@ -1,0 +1,36 @@
+{{define "title"}}{{.Message}}{{end}}
+
+{{define "styles"}}
+{{end}}
+
+{{define "imports"}}
+{{end}}
+
+{{define "body"}}
+    {{if or (eq .Message "Regular chats") (eq .Message "Your chats")}}
+        <p><h1>Regular chats</h1></p>
+        {{range $i, $chat := .RegularChats}}
+            <div>
+                <p>
+                    <a href="/chat?name={{$chat}}">Chat with {{$chat}}</a>
+                    <br>
+                </p>
+            </div>
+        {{end}}
+    {{end}}
+
+    {{if or (eq .Message "Secret chats") (eq .Message "Your chats")}}
+        <p><h1>Secret chats</h1></p>
+        {{range $i, $chat := .SecretChats}}
+            </div>
+                <p>
+                    <a href="/chat?name={{$chat}}">Chat with {{$chat}}</a>
+                    <br>
+                </p>
+            </div>
+        {{end}}
+    {{end}}
+{{end}}
+
+{{define "afterbody"}}
+{{end}}
