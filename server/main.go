@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	task1 "messengerServer/tasks/1"
+	"messengerServer/tasks/DES"
 	"strings"
 )
 
@@ -41,9 +41,9 @@ func hr() {
 
 func main() {
 	str := "kekus"
-	newStr := task1.ShuffleIPtest([]byte(str), true, 1)
+	newStr := DES.ShuffleIPtest([]byte(str), true, 1)
 	fmt.Println("Shuffled: \"", string(newStr), "\"")
-	oldStr := task1.ShuffleIPRevtest(newStr, true, 1)
+	oldStr := DES.ShuffleIPRevtest(newStr, true, 1)
 	fmt.Println("Unshuffled: \"", string(oldStr), "\"")
 	return
 }
