@@ -77,7 +77,7 @@
         }
         .scroll-box {
             padding: 10px;
-            max-height: 500px;
+            max-height: 450px;
             width: 700px;
             overflow-y: scroll;
             margin-top: 10px;
@@ -105,7 +105,7 @@
     <div class="chat">
         <p>
             <h1>
-                Chat with {{.Name}}
+                Chat {{.Message}} with {{.Name}}
             </h1>
         </p>
 
@@ -117,7 +117,17 @@
                             <td></td>
                             <td colspan="2" style="text-align: right;">
                                 <p style="display: inline-block; text-align: left;">
-                                    <b style="color: #e86701;">You: </b>{{$message.Message}}
+                                    <b style="color: #e86701;">You: </b>
+
+                                    {{if eq $message.Type "text"}}
+                                        {{$message.Message}}
+                                    {{else if eq $message.Type "file"}}
+                                        <a href="/getFile/{{$message.Message}}" target="_blank" rel="noopener noreferrer">Download attached file {{$message.Message}}</a>
+                                    {{else if eq $message.Type "image"}}
+                                        <img src="/getFile/{{$message.Message}}" style="max-width: 400px; max-height: 200px;" alt="Attached image {{$message.Message}}">
+                                    {{else}}
+                                        <span style="color: red;">Unsupported message type</style>
+                                    {{end}}
                                 </p>
                             </td>
                         </tr>
@@ -135,14 +145,16 @@
             </table>
         </div>
 
-        <form id="send" method="post">
+        <form id="sendMessage" method="post">
+            <input type="hidden" name="formID" value="sendMessage">
             <p>
                 <input name="message" type="text" placeholder="Type your message" style="width: 100%;">
                 <button type="submit">Send</button>
             </p>
         </form>
 
-        <form id="send" method="post">
+        <form id="sendFile" method="post">
+            <input type="hidden" name="formID" value="sendFile">
             <p>
                 <input type="file" id="file" name="file" style="width: 66%;">
                 <button type="submit">Send File</button>
@@ -164,6 +176,13 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         scrollDown();
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+        message = "{{.Alert}}"
+        if (message != "") {
+            alert(message);
+        }
     });
 </script>
 {{end}}

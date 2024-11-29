@@ -63,7 +63,10 @@ func Init() {
 		}
 	})
 
+	http.Handle("/getPage/", http.StripPrefix("/getPage/", http.FileServer(http.Dir("front/pages"))))
 	http.Handle("/getpage/", http.StripPrefix("/getpage/", http.FileServer(http.Dir("front/pages"))))
+
+	http.Handle("/getFile/", http.StripPrefix("/getFile/", http.FileServer(http.Dir("back/saved"))))
 	http.Handle("/getfile/", http.StripPrefix("/getfile/", http.FileServer(http.Dir("back/saved"))))
 }
 
