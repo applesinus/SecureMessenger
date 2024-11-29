@@ -47,6 +47,10 @@ func LoadUsers(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
+func GetUsers() map[string]string {
+	return Users.users
+}
+
 func (users *UsersType) checkLogin(user, password string) bool {
 	users.rwmu.RLock()
 	defer Users.rwmu.RUnlock()

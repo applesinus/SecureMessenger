@@ -6,10 +6,11 @@ import (
 	"log"
 	"messengerClient/back/crypto"
 	"messengerClient/back/users"
+	"messengerClient/types"
 	"net/http"
 )
 
-func mainPage(w http.ResponseWriter, r *http.Request, data data) {
+func mainPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/main.html")
 	if err != nil {
 		log.Println(err.Error())
@@ -106,7 +107,7 @@ func registerPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	message := data{
+	message := types.Data{
 		Message: "",
 	}
 	msg := r.URL.Query().Get("error")

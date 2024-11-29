@@ -93,6 +93,10 @@
             width: 200px;
             max-width: 200px;
             text-align: left;
+            padding-top: 10px;
+        }
+        .scroll-box table p {
+            margin: 0;
         }
 
     </style>
@@ -112,35 +116,38 @@
         <div id="scroll-box" class="scroll-box">
             <table>
                 {{range $i, $message := .Messages}}
-                    {{if eq $message.Author $.User}}
-                        <tr>
+                    <tr id="{{$message.Id}}">
+                        {{if eq $message.Author $.User}}
                             <td></td>
                             <td colspan="2" style="text-align: right;">
+                        {{else}}
+                            <td colspan="2">
+                        {{end}}
                                 <p style="display: inline-block; text-align: left;">
-                                    <b style="color: #e86701;">You: </b>
+                                    <b style="color: #e86701;">{{if eq $message.Author $.User}}You:{{else}}{{$message.Author}}{{end}} </b>
 
                                     {{if eq $message.Type "text"}}
                                         {{$message.Message}}
                                     {{else if eq $message.Type "file"}}
-                                        <a href="/getFile/{{$message.Message}}" target="_blank" rel="noopener noreferrer">Download attached file {{$message.Message}}</a>
+                                        <a href="/getFile/{{$message.Message}}" target="_blank" rel="noopener noreferrer">{{$message.Message}}</a>
                                     {{else if eq $message.Type "image"}}
                                         <img src="/getFile/{{$message.Message}}" style="max-width: 400px; max-height: 200px;" alt="Attached image {{$message.Message}}">
                                     {{else}}
                                         <span style="color: red;">Unsupported message type</style>
                                     {{end}}
                                 </p>
+                                    
+                                {{range $i, $listener := $.Listeners}}
+                                    {{if eq (printf "%v.%v" $.Message $message.Id) $listener}}
+                                        <p style="font-size: 10px; margin: 0; color: grey;"><span id="progressBar_{{$listener}}">Ok</span></p>
+                                    {{end}}
+                                {{end}}
+                                
                             </td>
-                        </tr>
-                    {{else}}
-                        <tr>
-                            <td colspan="2">
-                                <p>
-                                    <b style="color: #e86701;">{{$message.Author}}: </b>{{$message.Message}}
-                                </p>
-                            </td>
+                        {{if not (eq $message.Author $.User)}}
                             <td></td>
-                        </tr>
-                    {{end}}
+                        {{end}}
+                    </tr>
                 {{end}}
             </table>
         </div>
@@ -184,5 +191,40 @@
             alert(message);
         }
     });
+
+    eventSources = new Map();
+
+    {{range $i, $listener := .Listeners}}
+        {
+            eventSource = new EventSource("/chat/update?name={{$listener}}");
+
+            eventSource.onmessage = function(event) {
+                message = ""
+
+                if (event.data === "-1") {
+                    message = "Internal error";
+                } else if (event.data === "0") {
+                    message = "Ok";
+                } else if (event.data === "1100") {
+                    message = "Encrypted";
+                } else if (event.data.startsWith("1")) {
+                    message = "Encrypting progress: " + event.data.substring(2) + "%";
+                } else if (event.data.startsWith("2100")) {
+                    message = "Sent";
+                } else if (event.data.startsWith("2")) {
+                    message = "Sending progress: " + event.data.substring(2) + "%";
+                } else if (event.data.startsWith("3100")) {
+                    message = "Uploaded";
+                } else if (event.data.startsWith("3")) {
+                    message = "Uploading progress: " + event.data.substring(2) + "%";
+                } 
+
+                document.getElementById("progressBar_{{$listener}}").textContent = message;
+            };
+
+            eventSources.set("{{$listener}}", eventSource);
+        }
+    {{end}}
+
 </script>
 {{end}}

@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	remoteserver "messengerClient/back/remoteServer"
+	"messengerClient/back/saved"
+	"messengerClient/consts"
+	"messengerClient/types"
 	"net/http"
-	"os"
-	"strings"
 )
 
-func chatsPage(w http.ResponseWriter, r *http.Request, data data) {
+func chatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/chats.html")
 	if err != nil {
 		log.Println(err.Error())
@@ -33,7 +35,7 @@ func chatsPage(w http.ResponseWriter, r *http.Request, data data) {
 	}
 }
 
-func regularChatsPage(w http.ResponseWriter, r *http.Request, data data) {
+func regularChatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/chats.html")
 	if err != nil {
 		log.Println(err.Error())
@@ -56,7 +58,7 @@ func regularChatsPage(w http.ResponseWriter, r *http.Request, data data) {
 	}
 }
 
-func secretChatsPage(w http.ResponseWriter, r *http.Request, data data) {
+func secretChatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/chats.html")
 	if err != nil {
 		log.Println(err.Error())
@@ -79,7 +81,7 @@ func secretChatsPage(w http.ResponseWriter, r *http.Request, data data) {
 	}
 }
 
-func newChatPage(w http.ResponseWriter, r *http.Request, data data) {
+func newChatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/newChat.html")
 	if err != nil {
 		log.Println(err.Error())
@@ -91,21 +93,30 @@ func newChatPage(w http.ResponseWriter, r *http.Request, data data) {
 	}
 }
 
-func chatPage(w http.ResponseWriter, r *http.Request, data data) {
+func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
+	chatID := r.URL.Query().Get("id")
+	if chatID == "" {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
 	if r.Method == "POST" {
+		var progressChan chan int
+
 		switch r.FormValue("formID") {
 		case "sendMessage":
-			msg := r.FormValue("message")
-			data.Messages = append(data.Messages, message{
-				Author:  data.User,
-				Message: msg,
-			})
+			progressChan = remoteserver.SendMessage(chatID, r.FormValue("message"))
 
 		case "sendFile":
-			data.Alert = "File uploading is not supported yet"
+			// TODO
+			//progressChan = remoteserver.SendFile(chatID, os.Open(r.FormValue("file")))
 
 		default:
 			data.Alert = "Unknown form"
+		}
+
+		if progressChan != nil {
+			consts.AddListener(data.User, chatID, progressChan)
 		}
 	}
 
@@ -114,64 +125,27 @@ func chatPage(w http.ResponseWriter, r *http.Request, data data) {
 		log.Println(err.Error())
 	}
 
-	// TEMP
-	data.Name = "General Grievous"
-
-	meme, err := os.Open("back/saved/meme.jpeg")
-	if err != nil {
-		log.Println(err.Error())
-	} else {
-		data.Messages = append(data.Messages, message{
-			Author:  data.User,
-			Message: strings.TrimPrefix(meme.Name(), "back/saved/"),
-			Type:    "image",
-		})
-
-		data.Messages = append(data.Messages, message{
-			Author:  data.User,
-			Message: strings.TrimPrefix(meme.Name(), "back/saved/"),
-			Type:    "file",
-		})
+	data.Messages = saved.GetMessages(chatID)
+	if data.Messages == nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
 	}
 
-	data.Messages = append(data.Messages, []message{
-		{
-			Author:  data.User,
-			Message: "Hello there",
-			Type:    "text",
-		},
-		{
-			Author:  "General Grievous",
-			Message: "General Kenobi! You are a bold one.",
-			Type:    "text",
-		},
-		{
-			Author:  "General Grievous",
-			Message: "Kill him!",
-			Type:    "text",
-		},
-		{
-			Author:  "Battle Droids",
-			Message: "[Droids fail to kill Obi-Wan]",
-			Type:    "text",
-		},
-		{
-			Author:  "Battle Droids",
-			Message: "[Other droids surround him]",
-			Type:    "text",
-		},
-		{
-			Author:  "General Grievous",
-			Message: "Back away! I will deal with this Jedi scum myself!",
-			Type:    "text",
-		},
-		{
-			Author:  data.User,
-			Message: "Your move!",
-			Type:    "text",
-		},
-	}...)
+	// TEMP
+	data.Listeners = []string{
+		chatID + ".0",
+	}
+
+	progressChan := remoteserver.SendMessage(chatID, r.FormValue("message"))
+	if progressChan != nil {
+		consts.AddListener(data.User, chatID+".0", progressChan)
+		log.Printf("%v\n", chatID+".0")
+	}
 	// TEMP END
+
+	for idx := range data.Messages {
+		data.Messages[idx].Id = fmt.Sprint(idx)
+	}
 
 	data.Message = r.URL.Query().Get("id")
 	if data.Message == "" {
@@ -181,5 +155,58 @@ func chatPage(w http.ResponseWriter, r *http.Request, data data) {
 	err = t.Execute(w, data)
 	if err != nil {
 		fmt.Println(err.Error())
+	}
+}
+
+func updateChatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		fmt.Fprintf(w, "data: -1\n\n")
+		return
+	}
+	defer flusher.Flush()
+
+	user := data.User
+	eventID := r.URL.Query().Get("name")
+	if eventID == "" || user == "" {
+		fmt.Fprintf(w, "data: -1\n\n")
+		flusher.Flush()
+
+		return
+	}
+
+	userUpdates := consts.EventListeners.Events[user]
+	if userUpdates == nil {
+		consts.EventListeners.Mu.Lock()
+		consts.EventListeners.Events[user] = make(map[string]chan int)
+		userUpdates = consts.EventListeners.Events[user]
+		consts.EventListeners.Mu.Unlock()
+	}
+
+	if userUpdates[eventID] == nil {
+		fmt.Fprintf(w, "data: 0\n\n")
+		flusher.Flush()
+		return
+	}
+
+	for {
+		if userUpdates[eventID] == nil {
+			fmt.Fprintf(w, "data: 0\n\n")
+			flusher.Flush()
+
+			break
+		}
+
+		progress := <-userUpdates[eventID]
+		fmt.Fprintf(w, "data: %d\n\n", progress)
+		flusher.Flush()
+
+		if progress == 0 {
+			break
+		}
 	}
 }

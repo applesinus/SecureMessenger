@@ -2,7 +2,10 @@ package handlers
 
 import (
 	"messengerClient/back/users"
+	"messengerClient/consts"
+	"messengerClient/types"
 	"net/http"
+	"sync"
 )
 
 const (
@@ -14,6 +17,15 @@ const (
 )
 
 func Init() {
+	consts.EventListeners = types.EventsType{
+		Events: make(map[string]map[string]chan int),
+		Mu:     new(sync.Mutex),
+	}
+
+	for users := range users.GetUsers() {
+		consts.EventListeners.Events[users] = make(map[string]chan int)
+	}
+
 	http.HandleFunc("/login", loginPage)
 	http.HandleFunc("/register", registerPage)
 
@@ -29,7 +41,7 @@ func Init() {
 			return
 		}
 
-		data := data{
+		data := types.Data{
 			User: username,
 		}
 
@@ -55,6 +67,9 @@ func Init() {
 
 		case "/redirect":
 			redirectPage(w, r)
+
+		case "/chat/update":
+			updateChatsPage(w, r, data)
 
 		case "", "/main":
 			mainPage(w, r, data)

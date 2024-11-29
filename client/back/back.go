@@ -4,16 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"messengerClient/back/saved"
+	"messengerClient/consts"
 	"messengerClient/front/handlers"
 	"net/http"
 	"runtime"
 	"strconv"
 	"sync"
-)
-
-const (
-	localHost = "localhost:"
-	ip        = "127.0.0.1:"
 )
 
 func Start(ctx context.Context, wg *sync.WaitGroup) {
@@ -22,6 +19,8 @@ func Start(ctx context.Context, wg *sync.WaitGroup) {
 	errCh := make(chan error)
 
 	startFront(8080, errCh)
+	saved.RestoreChats()
+	defer saved.SaveChats()
 
 	for {
 		select {
@@ -32,6 +31,7 @@ func Start(ctx context.Context, wg *sync.WaitGroup) {
 		case err := <-errCh:
 			log.Printf("[BACKEND][SERVER] Error crashed the server: %s", err)
 			startFront(8080, errCh)
+			saved.RestoreChats()
 		}
 	}
 }
@@ -42,9 +42,9 @@ func startFront(port int, errCh chan error) {
 
 	ipStarter := ""
 	if runtime.GOOS == "linux" {
-		ipStarter = ip
+		ipStarter = consts.LocalIP
 	} else {
-		ipStarter = localHost
+		ipStarter = consts.LocalHost
 	}
 
 	server := &http.Server{
