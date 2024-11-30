@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"html/template"
 	"log"
 	"messengerClient/back/crypto"
@@ -13,13 +12,13 @@ import (
 func mainPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/main.html")
 	if err != nil {
-		log.Println(err.Error())
+		log.Printf("[FRONT][TEMPLATE] Error parsing template: %s", err)
 		return
 	}
 
 	err = t.Execute(w, data)
 	if err != nil {
-		log.Println(err.Error())
+		log.Printf("[FRONT][TEMPLATE] Error executing template: %s", err)
 	}
 }
 
@@ -56,12 +55,12 @@ func loginPage(w http.ResponseWriter, r *http.Request) {
 
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_notuser.html", "front/pages/login.html")
 	if err != nil {
-		log.Println(err.Error())
+		log.Printf("[FRONT][TEMPLATE] Error parsing template: %s", err)
 	}
 
 	err = t.Execute(w, nil)
 	if err != nil {
-		fmt.Println(err.Error())
+		log.Printf("[FRONT][TEMPLATE] Error executing template: %s", err)
 	}
 }
 
@@ -117,12 +116,12 @@ func registerPage(w http.ResponseWriter, r *http.Request) {
 
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_notuser.html", "front/pages/register.html")
 	if err != nil {
-		log.Println(err.Error())
+		log.Printf("[FRONT][TEMPLATE] Error parsing template: %s", err)
 	}
 
 	err = t.Execute(w, message)
 	if err != nil {
-		fmt.Println(err.Error())
+		log.Printf("[FRONT][TEMPLATE] Error executing template: %s", err)
 	}
 }
 

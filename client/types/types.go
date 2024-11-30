@@ -15,6 +15,11 @@ type EventsType struct {
 	Events map[string]map[string]chan int
 }
 
+type RecievedType struct {
+	Mu     *sync.Mutex
+	Events map[string]map[string]chan []byte
+}
+
 type Chats struct {
 	Mu    *sync.Mutex
 	Chats map[string]*ChatType
@@ -32,8 +37,8 @@ type Data struct {
 	Message      string
 	Name         string
 	Alert        string
-	RegularChats []string
-	SecretChats  []string
+	RegularChats [][]string
+	SecretChats  [][]string
 	Messages     []Message
 	Listeners    []string
 }

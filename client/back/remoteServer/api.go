@@ -1,7 +1,6 @@
 package remoteserver
 
 import (
-	"log"
 	"os"
 	"time"
 )
@@ -14,7 +13,6 @@ func SendMessage(chatID string, message string) chan int {
 		defer close(progress)
 
 		for {
-			log.Printf("Sending message... %v", percentage)
 			time.Sleep(time.Second * 1)
 
 			if percentage == 1100 {

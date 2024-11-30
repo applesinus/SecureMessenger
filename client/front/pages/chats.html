@@ -12,7 +12,7 @@
         {{range $i, $chat := .RegularChats}}
             <div>
                 <p>
-                    <a href="/chat?name={{$chat}}">Chat with {{$chat}}</a>
+                    <a href="/chat?id={{index $chat 1}}">Chat {{index $chat 1}} with {{index $chat 0}}</a>
                     <br>
                 </p>
             </div>
@@ -24,7 +24,7 @@
         {{range $i, $chat := .SecretChats}}
             </div>
                 <p>
-                    <a href="/chat?name={{$chat}}">Chat with {{$chat}}</a>
+                    <a href="/chat?id={{index $chat 1}}">Chat {{index $chat 1}} with {{index $chat 0}}</a>
                     <br>
                 </p>
             </div>

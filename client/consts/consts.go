@@ -3,6 +3,7 @@ package consts
 import "messengerClient/types"
 
 var EventListeners types.EventsType
+var Recievers types.RecievedType
 
 func AddListener(user string, eventID string, listener chan int) {
 	EventListeners.Mu.Lock()

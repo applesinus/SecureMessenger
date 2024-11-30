@@ -2,7 +2,6 @@ package back
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"messengerClient/back/saved"
 	"messengerClient/consts"
@@ -37,8 +36,7 @@ func Start(ctx context.Context, wg *sync.WaitGroup) {
 }
 
 func startFront(port int, errCh chan error) {
-	log.Println("Starting HTTP Server")
-	log.Printf("Listening on port %d", port)
+	log.Printf("[BACKEND][SERVER] Starting")
 
 	ipStarter := ""
 	if runtime.GOOS == "linux" {
@@ -52,7 +50,6 @@ func startFront(port int, errCh chan error) {
 	}
 	serverIsRunning := make(chan bool)
 	go func(serverIsRunning chan bool) {
-		fmt.Println("\nSERVER IS RUNNING!")
 		serverIsRunning <- true
 		err := server.ListenAndServe()
 		if err != nil {
@@ -61,6 +58,7 @@ func startFront(port int, errCh chan error) {
 	}(serverIsRunning)
 	<-serverIsRunning
 	close(serverIsRunning)
+	log.Printf("[BACKEND][SERVER] Listening on port %d", port)
 
 	handlers.Init()
 

@@ -1,51 +1,111 @@
-[
-  {
-    "id": "1",
-    "reciever": "General Grievous",
-    "encryption": "no",
-    "messages": [
-      {
-        "Id": "0",
-        "Message": "Hello there",
-        "Type": "text",
-        "Author": "kekus"
+{
+  "kekus": {
+    "Mu": {},
+    "Chats": {
+      "1": {
+        "id": "1",
+        "reciever": "General Grievous",
+        "encryption": "no",
+        "messages": [
+          {
+            "Id": "0",
+            "Message": "Hello there",
+            "Type": "text",
+            "Author": "kekus"
+          },
+          {
+            "Id": "1",
+            "Message": "General Kenobi! You are a bold one.",
+            "Type": "text",
+            "Author": "General Grievous"
+          },
+          {
+            "Id": "2",
+            "Message": "Kill him!",
+            "Type": "text",
+            "Author": "General Grievous"
+          },
+          {
+            "Id": "3",
+            "Message": "[Droids fail to kill Obi-Wan]",
+            "Type": "text",
+            "Author": "Battle Droids"
+          },
+          {
+            "Id": "4",
+            "Message": "[Other droids surround him]",
+            "Type": "text",
+            "Author": "Battle Droids"
+          },
+          {
+            "Id": "5",
+            "Message": "Back away! I will deal with this Jedi scum myself!",
+            "Type": "text",
+            "Author": "General Grievous"
+          },
+          {
+            "Id": "6",
+            "Message": "Your move!",
+            "Type": "text",
+            "Author": "kekus"
+          },
+          {
+            "Id": "7",
+            "Message": "meme.jpeg",
+            "Type": "image",
+            "Author": "kekus"
+          }
+        ]
       },
-      {
-        "Id": "1",
-        "Message": "General Kenobi! You are a bold one.",
-        "Type": "text",
-        "Author": "General Grievous"
-      },
-      {
-        "Id": "2",
-        "Message": "Kill him!",
-        "Type": "text",
-        "Author": "General Grievous"
-      },
-      {
-        "Id": "3",
-        "Message": "[Droids fail to kill Obi-Wan]",
-        "Type": "text",
-        "Author": "Battle Droids"
-      },
-      {
-        "Id": "4",
-        "Message": "[Other droids surround him]",
-        "Type": "text",
-        "Author": "Battle Droids"
-      },
-      {
-        "Id": "5",
-        "Message": "Back away! I will deal with this Jedi scum myself!",
-        "Type": "text",
-        "Author": "General Grievous"
-      },
-      {
-        "Id": "6",
-        "Message": "Your move!",
-        "Type": "text",
-        "Author": "kekus"
+      "2": {
+        "id": "2",
+        "reciever": "lolus",
+        "encryption": "no",
+        "messages": [
+          {
+            "Id": "0",
+            "Message": "lol! hellol!",
+            "Type": "text",
+            "Author": "kekus"
+          },
+          {
+            "Id": "1",
+            "Message": "Lorem ipsum is a dummy or placeholder text commonly used in graphic design, publishing, and web development to fill empty spaces in a layout that do not yet have content.  Lorem ipsum is typically a corrupted version of De finibus bonorum et malorum, a 1st-century BC text by the Roman statesman and philosopher Cicero, with words altered, added, and removed to make it nonsensical and improper Latin. The first two words themselves are a truncation of dolorem ipsum (\"pain itself\").  Versions of the Lorem ipsum text have been used in typesetting at least since the 1960s, when it was popularized by advertisements for Letraset transfer sheets. Lorem ipsum was introduced to the digital world in the mid-1980s, when Aldus employed it in graphic and word-processing templates for its desktop publishing program PageMaker. Other popular word processors, including Pages and Microsoft Word, have since adopted Lorem ipsum, as have many LaTeX packages, web content managers such as Joomla! and WordPress, and CSS libraries such as Semantic UI.",
+            "Type": "text",
+            "Author": "kekus"
+          },
+          {
+            "Id": "2",
+            "Message": "Why do you fucking ignore me?!",
+            "Type": "text",
+            "Author": "kekus"
+          },
+          {
+            "Id": "3",
+            "Message": "Oh there is no other users yet...",
+            "Type": "text",
+            "Author": "kekus"
+          },
+          {
+            "Id": "4",
+            "Message": "123.pdf",
+            "Type": "file",
+            "Author": "kekus"
+          },
+          {
+            "Id": "5",
+            "Message": "123(1).pdf",
+            "Type": "file",
+            "Author": "kekus"
+          },
+          {
+            "Id": "6",
+            "Message": "new",
+            "Type": "text",
+            "Author": "kekus"
+          }
+        ]
       }
-    ]
+    }
   }
-]
+}

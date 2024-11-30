@@ -160,7 +160,7 @@
             </p>
         </form>
 
-        <form id="sendFile" method="post">
+        <form id="sendFile" method="post" enctype="multipart/form-data">
             <input type="hidden" name="formID" value="sendFile">
             <p>
                 <input type="file" id="file" name="file" style="width: 66%;">
@@ -217,7 +217,7 @@
                     message = "Uploaded";
                 } else if (event.data.startsWith("3")) {
                     message = "Uploading progress: " + event.data.substring(2) + "%";
-                } 
+                }
 
                 document.getElementById("progressBar_{{$listener}}").textContent = message;
             };

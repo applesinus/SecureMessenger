@@ -22,7 +22,7 @@ var Users UsersType
 func LoadUsers(ctx context.Context, wg *sync.WaitGroup) {
 	file, err := os.OpenFile("back/users.txt", os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("[BACKEND][USERS LOAD] Error opening file: %s", err)
 	}
 
 	scanner := bufio.NewScanner(file)

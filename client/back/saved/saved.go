@@ -7,38 +7,40 @@ import (
 	"messengerClient/types"
 	"os"
 	"strconv"
-	"sync"
 )
 
-var SavedChats types.Chats
+var SavedChats map[string]types.Chats
 
 func RestoreChats() {
 	file, err := os.OpenFile("back/saved/chats/chats.json", os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
-		log.Printf("[CHATS RESTORE] Error opening file: %s", err)
+		log.Printf("[BACKEND][CHATS RESTORE] Error opening file: %s", err)
 	}
 	defer file.Close()
 
-	restoredChats := make([]types.ChatType, 0)
+	restoredChats := make(map[string]types.Chats)
 	jsonDecoder := json.NewDecoder(file)
 	err = jsonDecoder.Decode(&restoredChats)
 
 	if err != nil {
-		log.Printf("[CHATS RESTORE] Error decoding file: %s", err)
-		restoredChats = make([]types.ChatType, 0)
+		log.Printf("[BACKEND][CHATS RESTORE] Error decoding file: %s", err)
+		restoredChats = make(map[string]types.Chats)
 	}
 
-	SavedChats = types.Chats{
+	SavedChats = make(map[string]types.Chats)
+
+	for user := range restoredChats {
+		SavedChats[user] = restoredChats[user]
+	}
+
+	// TEMP
+	/*chats := types.Chats{
 		Mu:    new(sync.Mutex),
 		Chats: make(map[string]*types.ChatType),
 	}
 
-	for _, chat := range restoredChats {
-		SavedChats.Chats[chat.Id] = &chat
-	}
-
-	/*msgs := make([]Message, 0)
-	msgs = append(msgs, []Message{
+	msgs := make([]types.Message, 0)
+	msgs = append(msgs, []types.Message{
 		{
 			Id:      "0",
 			Author:  "kekus",
@@ -81,39 +83,42 @@ func RestoreChats() {
 			Message: "Your move!",
 			Type:    "text",
 		},
+		{
+			Id:      "7",
+			Author:  "kekus",
+			Message: "meme.jpeg",
+			Type:    "image",
+		},
 	}...)
 
-	SavedChats.chats["1"] = &types.ChatType{
+	chats.Chats["1"] = &types.ChatType{
 		Id:         "1",
 		Reciever:   "General Grievous",
-		Encryption: encriptionNo,
+		Encryption: consts.EncriptionNo,
 		Messages:   msgs,
-	}*/
+	}
+
+	SavedChats["kekus"] = chats*/
+	// TEMP END
 }
 
 func SaveChats() {
-	SavedChats.Mu.Lock()
-	defer SavedChats.Mu.Unlock()
+	backingUpChats := make(map[string]types.Chats, 0)
 
-	backingUpChats := make([]types.ChatType, 0)
-
-	for _, chat := range SavedChats.Chats {
-		for idx := range chat.Messages {
-			chat.Messages[idx].Id = strconv.Itoa(idx)
-		}
-		backingUpChats = append(backingUpChats, *chat)
+	for user := range SavedChats {
+		backingUpChats[user] = SavedChats[user]
 	}
 
 	buff, err := json.MarshalIndent(backingUpChats, "", "  ")
 
 	if err != nil {
-		log.Printf("[CHATS SAVE] Error encoding file: %s", err)
+		log.Printf("[BACKEND][CHATS SAVE] Error encoding file: %s", err)
 		return
 	}
 
 	file, err := os.OpenFile("back/saved/chats/chats.json", os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("[BACKEND][CHATS SAVE] Error opening file: %s", err)
 	}
 	defer file.Close()
 
@@ -121,11 +126,12 @@ func SaveChats() {
 	file.Write(buff)
 }
 
-func AddMessage(chatId string, message types.Message) {
-	SavedChats.Mu.Lock()
-	defer SavedChats.Mu.Unlock()
+// No Id needed
+func AddMessage(user, chatId string, message types.Message) {
+	SavedChats[user].Mu.Lock()
+	defer SavedChats[user].Mu.Unlock()
 
-	for _, chat := range SavedChats.Chats {
+	for _, chat := range SavedChats[user].Chats {
 		if chat.Id == chatId {
 			message.Id = strconv.Itoa(len(chat.Messages))
 			chat.Messages = append(chat.Messages, message)
@@ -133,23 +139,25 @@ func AddMessage(chatId string, message types.Message) {
 	}
 }
 
-func GetChatsNames(chatype ...string) []string {
-	chatNames := make([]string, 0)
+// chatype can be "regular" or "secret" (or empty for all)
+func GetChatsNames(user string, chatype ...string) [][]string {
+	chatNames := make([][]string, 0)
+
 	if len(chatype) == 0 && chatype[0] != "regular" && chatype[0] != "secret" {
-		for _, chat := range SavedChats.Chats {
-			chatNames = append(chatNames, chat.Reciever)
+		for _, chat := range SavedChats[user].Chats {
+			chatNames = append(chatNames, []string{chat.Reciever, chat.Id})
 		}
 	} else {
 		if chatype[0] == "regular" {
-			for _, chat := range SavedChats.Chats {
+			for _, chat := range SavedChats[user].Chats {
 				if chat.Encryption == consts.EncriptionNo {
-					chatNames = append(chatNames, chat.Reciever)
+					chatNames = append(chatNames, []string{chat.Reciever, chat.Id})
 				}
 			}
 		} else if chatype[0] == "secret" {
-			for _, chat := range SavedChats.Chats {
+			for _, chat := range SavedChats[user].Chats {
 				if !(chat.Encryption == consts.EncriptionNo) {
-					chatNames = append(chatNames, chat.Reciever)
+					chatNames = append(chatNames, []string{chat.Reciever, chat.Id})
 				}
 			}
 		}
@@ -157,10 +165,34 @@ func GetChatsNames(chatype ...string) []string {
 	return chatNames
 }
 
-func GetMessages(chatId string) []types.Message {
-	if SavedChats.Chats[chatId] == nil {
-		return nil
+func GetMessages(user, chatId string) ([]types.Message, string) {
+	if SavedChats[user].Chats[chatId] == nil {
+		return nil, ""
 	}
 
-	return SavedChats.Chats[chatId].Messages
+	return SavedChats[user].Chats[chatId].Messages, SavedChats[user].Chats[chatId].Reciever
+}
+
+func NewChat(user, reciever, encryption string) string {
+	SavedChats[user].Mu.Lock()
+	defer SavedChats[user].Mu.Unlock()
+
+	newChat := types.ChatType{
+		Reciever:   reciever,
+		Encryption: encryption,
+		Messages:   make([]types.Message, 0),
+	}
+
+	chatId := 0
+	for _, chat := range SavedChats[user].Chats {
+		id, _ := strconv.Atoi(chat.Id)
+		if id > chatId {
+			chatId = id
+		}
+	}
+	newChat.Id = strconv.Itoa(chatId + 1)
+
+	SavedChats[user].Chats[newChat.Id] = &newChat
+
+	return newChat.Id
 }

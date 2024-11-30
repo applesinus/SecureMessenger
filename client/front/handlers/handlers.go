@@ -17,13 +17,22 @@ const (
 )
 
 func Init() {
+	avaliableUsers := users.GetUsers()
+
 	consts.EventListeners = types.EventsType{
 		Events: make(map[string]map[string]chan int),
 		Mu:     new(sync.Mutex),
 	}
-
-	for users := range users.GetUsers() {
+	for users := range avaliableUsers {
 		consts.EventListeners.Events[users] = make(map[string]chan int)
+	}
+
+	consts.Recievers = types.RecievedType{
+		Events: make(map[string]map[string]chan []byte),
+		Mu:     new(sync.Mutex),
+	}
+	for users := range avaliableUsers {
+		consts.Recievers.Events[users] = make(map[string]chan []byte)
 	}
 
 	http.HandleFunc("/login", loginPage)
@@ -70,6 +79,9 @@ func Init() {
 
 		case "/chat/update":
 			updateChatsPage(w, r, data)
+
+		case "/chat/recieve":
+			recieveChatPage(w, r, data)
 
 		case "", "/main":
 			mainPage(w, r, data)
