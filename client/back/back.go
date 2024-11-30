@@ -7,6 +7,7 @@ import (
 	"messengerClient/consts"
 	"messengerClient/front/handlers"
 	"net/http"
+	"os/exec"
 	"runtime"
 	"strconv"
 	"sync"
@@ -41,8 +42,16 @@ func startFront(port int, errCh chan error) {
 	ipStarter := ""
 	if runtime.GOOS == "linux" {
 		ipStarter = consts.LocalIP
+		err := exec.Command("xdg-open", "http://"+ipStarter+strconv.Itoa(port)).Start()
+		if err != nil {
+			log.Printf("[BACKEND][SERVER] Error opening browser: %s", err)
+		}
 	} else {
 		ipStarter = consts.LocalHost
+		err := exec.Command("rundll32", "url.dll,FileProtocolHandler", "http://"+ipStarter+strconv.Itoa(port)).Start()
+		if err != nil {
+			log.Printf("[BACKEND][SERVER] Error opening browser: %s", err)
+		}
 	}
 
 	server := &http.Server{
