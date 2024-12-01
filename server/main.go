@@ -1,47 +1,104 @@
+// main.go
 package main
 
 import (
+	"context"
 	"fmt"
-	"strings"
+	"log"
+
+	"github.com/streadway/amqp"
+
+	"messengerServer/consts"
 )
 
-func enterArgs(amount int) []string {
-	args := make([]string, 0)
-	switch {
-	case amount > 0:
-		fmt.Printf("Enter %d args: \n", amount)
-		var arg string
-		for i := 0; i < amount; i++ {
-			fmt.Scan(&arg)
-			args = append(args, arg)
-		}
-	// 0 means that there's undefined amount of arguments
-	case amount == 0:
-		fmt.Printf("Enter args (to stop enter 'done'): \n")
-		var arg string
-		for i := 0; true; i++ {
-			fmt.Scan(&arg)
-			if strings.ToLower(arg) == "done" {
-				break
-			}
-			args = append(args, arg)
-		}
-
-	default:
-		fmt.Printf("ERROR! Amount of arguments is less than 0 in main.go/enterArgs.\n")
-	}
-	fmt.Println()
-	return args
-}
-
-func hr() {
-	fmt.Print("\n====================\n")
-}
-
 func main() {
-	/*str := "kekus"
-	newStr := DES.ShuffleIPtest([]byte(str), true, 1)
-	fmt.Println("Shuffled: \"", string(newStr), "\"")
-	oldStr := DES.ShuffleIPRevtest(newStr, true, 1)
-	fmt.Println("Unshuffled: \"", string(oldStr), "\"")*/
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	conn, err := amqp.Dial(fmt.Sprintf("amqp://%s:%s@localhost:5672/", consts.RabbitmqUser, consts.RabbitmqPassword))
+	if consts.LogIfError(err, "Failed to connect to RabbitMQ") {
+		return
+	}
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Fatalf("Failed to open a channel: %v", err)
+	}
+	defer ch.Close()
+
+	err = createRequestsExchange(ch)
+	if consts.LogIfError(err, "Failed to create exchange") {
+		return
+	}
+	go listenRequests(ctx, conn)
+}
+
+func listenRequests(ctx context.Context, conn *amqp.Connection) {
+	ch, err := conn.Channel()
+	if consts.LogIfError(err, "Failed to open a channel") {
+		return
+	}
+	defer ch.Close()
+
+	messages, err := ch.Consume(
+		"request", // queue
+		"",        // consumer
+		true,      // auto-ack
+		false,     // exclusive
+		false,     // no-local
+		false,     // no-wait
+		nil,       // args
+	)
+	if consts.LogIfError(err, "Failed to register a consumer") {
+		return
+	}
+
+	select {
+	case <-ctx.Done():
+		return
+
+	case msg := <-messages:
+		log.Printf("Received a request: %s", msg.Body)
+	}
+}
+
+func createRequestsExchange(ch *amqp.Channel) error {
+	err := ch.ExchangeDeclare(
+		"request",
+		"direct",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = ch.QueueDeclare(
+		"request",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+
+	err = ch.QueueBind(
+		"request",
+		"request",
+		"request",
+		false,
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
