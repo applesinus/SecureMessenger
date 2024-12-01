@@ -1,1 +1,1 @@
-package remoteserver
+package remoteServer

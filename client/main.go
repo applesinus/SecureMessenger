@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"messengerClient/back"
+	"messengerClient/back/remoteServer"
 	"messengerClient/back/users"
 	"os"
 	"os/signal"
@@ -15,6 +16,11 @@ import (
 )
 
 func main() {
+	ok := remoteServer.RabbitIsConnected()
+	if !ok {
+		log.Fatal("[MAIN] RabbitMQ and remote server is not connected")
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	wg := new(sync.WaitGroup)
