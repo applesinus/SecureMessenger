@@ -38,7 +38,7 @@ func main() {
 	}
 	go listenRequests(ctx, conn)
 
-	api.CreateGuestUser()
+	api.CreateGuestUser(ch)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
