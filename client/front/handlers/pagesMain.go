@@ -1,10 +1,11 @@
 package handlers
 
 import (
+	"fmt"
 	"html/template"
 	"log"
 	"messengerClient/back/crypto"
-	"messengerClient/back/users"
+	"messengerClient/back/remoteServer"
 	"messengerClient/types"
 	"net/http"
 )
@@ -42,11 +43,13 @@ func loginPage(w http.ResponseWriter, r *http.Request) {
 		username := r.FormValue("login")
 		password := r.FormValue("password")
 		password = crypto.Hash(password)
-		ok := users.Login(username, password)
-		if !ok {
-			http.Redirect(w, r, "/login?error=Wrong login or password", http.StatusSeeOther)
+
+		err := remoteServer.UserLogin(username, password)
+		if err != nil {
+			http.Redirect(w, r, fmt.Sprintf("/login?error=Error logging in: %s", err), http.StatusSeeOther)
 			return
 		}
+
 		updateCookie(w, "currentUser", username, expireTime)
 		updateCookie(w, "currentPassword", password, expireTime)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -94,9 +97,9 @@ func registerPage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		res := users.Register(w, username, password)
-		if res != "ok" {
-			http.Redirect(w, r, "/register?error="+res, http.StatusSeeOther)
+		err := remoteServer.UserRegister(username, crypto.Hash(password))
+		if err != nil {
+			http.Redirect(w, r, fmt.Sprintf("/register?error=Error registering: %s", err), http.StatusSeeOther)
 			return
 		}
 

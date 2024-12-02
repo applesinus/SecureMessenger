@@ -84,7 +84,18 @@ func newChatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 			return
 		}
 
-		chatID := saved.NewChat(data.User, recipient, chatType)
+		password, err := r.Cookie("currentPassword")
+		if err != nil {
+			http.Redirect(w, r, "/newChat?alert=You are not logged in", http.StatusSeeOther)
+			return
+		}
+
+		chatID, err := saved.NewChat(data.User, password.Value, recipient, chatType)
+		if err != nil {
+			http.Redirect(w, r, fmt.Sprintf("/newChat?alert=Error creating chat: %s", err), http.StatusSeeOther)
+			return
+		}
+
 		http.Redirect(w, r, "/chat?id="+chatID, http.StatusSeeOther)
 		return
 	}

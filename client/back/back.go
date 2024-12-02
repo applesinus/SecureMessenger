@@ -18,7 +18,7 @@ func Start(ctx context.Context, wg *sync.WaitGroup) {
 
 	errCh := make(chan error)
 
-	startFront(8080, errCh)
+	startClient(8080, errCh)
 	saved.RestoreChats()
 	defer saved.SaveChats()
 
@@ -30,13 +30,13 @@ func Start(ctx context.Context, wg *sync.WaitGroup) {
 
 		case err := <-errCh:
 			log.Printf("[BACKEND][SERVER] Error crashed the server: %s", err)
-			startFront(8080, errCh)
+			startClient(8080, errCh)
 			saved.RestoreChats()
 		}
 	}
 }
 
-func startFront(port int, errCh chan error) {
+func startClient(port int, errCh chan error) {
 	log.Printf("[BACKEND][SERVER] Starting")
 
 	ipStarter := ""

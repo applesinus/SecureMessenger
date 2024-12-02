@@ -2,7 +2,9 @@ package saved
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
+	"messengerClient/back/remoteServer"
 	"messengerClient/consts"
 	"messengerClient/types"
 	"os"
@@ -12,6 +14,16 @@ import (
 var SavedChats map[string]types.Chats
 
 func RestoreChats() {
+	// TEMP
+	// clear file to debug
+	fileT, err := os.OpenFile("back/saved/chats/chats.json", os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		log.Printf("[BACKEND][CHATS RESTORE] Error opening file: %s", err)
+	}
+	fileT.Truncate(0)
+	fileT.Close()
+	// TEMP END
+
 	file, err := os.OpenFile("back/saved/chats/chats.json", os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		log.Printf("[BACKEND][CHATS RESTORE] Error opening file: %s", err)
@@ -173,26 +185,42 @@ func GetMessages(user, chatId string) ([]types.Message, string) {
 	return SavedChats[user].Chats[chatId].Messages, SavedChats[user].Chats[chatId].Reciever
 }
 
-func NewChat(user, reciever, encryption string) string {
+func NewChat(user, password, reciever, encryption string) (string, error) {
 	SavedChats[user].Mu.Lock()
 	defer SavedChats[user].Mu.Unlock()
 
+	id := ""
+	var err error
+
+	switch encryption {
+	case consts.EncriptionNo:
+		id, err = remoteServer.CreateChat(user, password, reciever)
+		if err != nil {
+			return "", err
+		}
+
+	case consts.EncriptionMagenta:
+		// TODO
+
+	case consts.EncriptionRC6:
+		// TODO
+
+	default:
+		return "", fmt.Errorf("unknown encryption type: %s", encryption)
+	}
+
 	newChat := types.ChatType{
+		Id:         id,
 		Reciever:   reciever,
 		Encryption: encryption,
 		Messages:   make([]types.Message, 0),
 	}
 
-	chatId := 0
-	for _, chat := range SavedChats[user].Chats {
-		id, _ := strconv.Atoi(chat.Id)
-		if id > chatId {
-			chatId = id
-		}
+	if SavedChats[user].Chats[id] != nil {
+		return "", fmt.Errorf("chat with id %s already exists on local device but not on server, please contact admin", id)
 	}
-	newChat.Id = strconv.Itoa(chatId + 1)
 
-	SavedChats[user].Chats[newChat.Id] = &newChat
+	SavedChats[user].Chats[id] = &newChat
 
-	return newChat.Id
+	return id, nil
 }

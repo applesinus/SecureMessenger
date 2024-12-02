@@ -379,3 +379,22 @@ func getAllQueues() ([]string, error) {
 
 	return queueNames, nil
 }
+
+func CreateGuestUser() error {
+	err := CreateUser(ch, "guest", "guest")
+	if err != nil {
+		return fmt.Errorf("failed to create guest user: %w", err)
+	}
+
+	err = setVhostPermission("guest", types.Permission{Configure: "", Write: ".*", Read: ".*"})
+	if err != nil {
+		return fmt.Errorf("failed to set vhost permission: %w", err)
+	}
+
+	err = setPermissions("guest", "guest", true, true)
+	if err != nil {
+		return fmt.Errorf("failed to set guest permission: %w", err)
+	}
+
+	return nil
+}

@@ -3,36 +3,36 @@ package users
 import (
 	"bufio"
 	"context"
+	"encoding/json"
+	"io"
 	"log"
-	"messengerClient/back/crypto"
-	"net/http"
 	"os"
-	"strings"
 	"sync"
 )
 
 type UsersType struct {
 	rwmu  *sync.RWMutex
 	file  *os.File
-	users map[string]string
+	users map[string]struct{}
 }
 
 var Users UsersType
 
 func LoadUsers(ctx context.Context, wg *sync.WaitGroup) {
-	file, err := os.OpenFile("back/users.txt", os.O_RDWR|os.O_CREATE, 0666)
+	file, err := os.OpenFile("back/users.json", os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		log.Fatalf("[BACKEND][USERS LOAD] Error opening file: %s", err)
 	}
 
-	scanner := bufio.NewScanner(file)
-	users := make(map[string]string)
+	body, err := io.ReadAll(file)
+	if err != nil {
+		log.Fatalf("[BACKEND][USERS LOAD] Error reading file: %s", err)
+	}
 
-	for scanner.Scan() {
-		words := strings.Split(scanner.Text(), ":")
-		if len(words) == 2 {
-			users[words[0]] = words[1]
-		}
+	users := make(map[string]struct{})
+	err = json.Unmarshal(body, &users)
+	if err != nil {
+		log.Fatalf("[BACKEND][USERS LOAD] Error unmarshalling file: %s", err)
 	}
 
 	Users = UsersType{
@@ -47,10 +47,40 @@ func LoadUsers(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-func GetUsers() map[string]string {
+func GetUsers() map[string]struct{} {
 	return Users.users
 }
 
+func Login(user string) {
+	Users.rwmu.Lock()
+	defer Users.rwmu.Unlock()
+	Users.users[user] = struct{}{}
+	Users.file.WriteString(user + "\n")
+}
+
+func Logout(user string) {
+	Users.rwmu.Lock()
+	defer Users.rwmu.Unlock()
+	delete(Users.users, user)
+
+	scanner := bufio.NewScanner(Users.file)
+	newFileBuf := make([]byte, 0)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line != user {
+			newFileBuf = append(newFileBuf, line...)
+			newFileBuf = append(newFileBuf, '\n')
+		}
+	}
+
+	Users.file.Truncate(0)
+	Users.file.Seek(0, 0)
+	Users.file.Write(newFileBuf)
+}
+
+// OLD FUNCTIONS
+/*
 func (users *UsersType) checkLogin(user, password string) bool {
 	users.rwmu.RLock()
 	defer Users.rwmu.RUnlock()
@@ -65,7 +95,7 @@ func CheckLogin(user, password string) bool {
 	return Users.checkLogin(user, password)
 }
 
-func Login(user, password string) bool {
+/*func Login(user, password string) bool {
 	return Users.checkLogin(user, password)
 }
 
@@ -87,11 +117,10 @@ func (users *UsersType) register(user, password string) {
 	users.file.WriteString(user + ":" + hashed + "\n")
 }
 
-func Register(w http.ResponseWriter, user, password string) string {
-	if Users.checkUser(user) {
-		return "user exists"
-	}
-
-	Users.register(user, password)
-	return "ok"
+func Register(user, password string) error {
+	return remoteServer.UserRegister(user, crypto.Hash(password))
 }
+
+func Login(user, password string) error {
+	return remoteServer.UserLogin(user, password)
+}*/

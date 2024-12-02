@@ -68,17 +68,22 @@ func SendFile(chatID string, file *os.File) chan int {
 	return progress
 }
 
-func CreateChat(user, password string, recipient string) error {
+func CreateChat(user, password string, recipient string) (string, error) {
 	resp, err := makeRequest(user, password, fmt.Sprintf("createRegularChat_%s", recipient))
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if !strings.Contains(resp, "ok_") {
-		return fmt.Errorf("failed to create chat: %s", resp)
+		return "", fmt.Errorf("failed to create chat: %s", resp)
 	}
 
-	return nil
+	parts := strings.Split(resp, "_")
+	if len(parts) != 2 {
+		return "", fmt.Errorf("failed to create chat: %s", resp)
+	}
+
+	return parts[1], nil
 }
 
 func CreateSecretChat(sender string, recipient string, cipherType string) error {
@@ -86,7 +91,34 @@ func CreateSecretChat(sender string, recipient string, cipherType string) error 
 	return nil
 }
 
+// RabbitMQ user funcs
+
+func UserExists(name string) (bool, error) {
+	resp, err := makeRequest("guest", "guest", "userExists_"+name)
+	if err != nil {
+		return false, err
+	}
+	return resp == "true", nil
+}
+
+func UserLogin(username, password string) error {
+	conn, err := amqp.Dial(fmt.Sprintf("amqp://%s:%s@localhost:5672/", username, password))
+	if err != nil {
+		return fmt.Errorf("failed to login to RabbitMQ: %v", err)
+	}
+	conn.Close()
+	return nil
+}
+
 func UserRegister(name string, password string) error {
+	ok, err := UserExists(name)
+	if err != nil {
+		return fmt.Errorf("failed to check user existence: %v", err)
+	}
+	if ok {
+		return fmt.Errorf("user %s already exists", name)
+	}
+
 	resp, err := makeRequest("guest", "guest", fmt.Sprintf("register_%s_%s", name, password))
 	if err != nil {
 		return err
@@ -97,25 +129,6 @@ func UserRegister(name string, password string) error {
 	}
 
 	return nil
-}
-
-// RabbitMQ user funcs
-
-func UserLogin(username, password string) error {
-	conn, err := amqp.Dial(fmt.Sprintf("amqp://%s:%s@localhost:5672/", username, password))
-	if err != nil {
-		return fmt.Errorf("Failed to login to RabbitMQ: %v", err)
-	}
-	conn.Close()
-	return nil
-}
-
-func UserExists(name string) (bool, error) {
-	resp, err := makeRequest("guest", "guest", "userExists_"+name)
-	if err != nil {
-		return false, err
-	}
-	return resp == "true", nil
 }
 
 func GetUserChats(name string) []string {

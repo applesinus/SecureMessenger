@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"messengerClient/back/remoteServer"
 	"messengerClient/back/users"
 	"messengerClient/consts"
 	"messengerClient/types"
@@ -10,10 +11,6 @@ import (
 
 const (
 	expireTime = 604800
-
-	errNoUser        = "no user"
-	errWrongPassword = "wrong password"
-	errNotLogged     = "not logged in"
 )
 
 func Init() {
@@ -39,6 +36,14 @@ func Init() {
 	http.HandleFunc("/register", registerPage)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// TEMP
+		// clear cookies to debug
+		cookies := r.Cookies()
+		for _, cookie := range cookies {
+			updateCookie(w, cookie.Name, "", 1)
+		}
+		// TEMP END
+
 		path := r.URL.Path
 		if path[len(path)-1] == '/' {
 			path = path[:len(path)-1]
@@ -107,9 +112,14 @@ func isLoggedIn(w http.ResponseWriter, r *http.Request) (bool, string) {
 		return false, ""
 	}
 
-	ok := users.CheckLogin(user.Value, password.Value)
+	err := remoteServer.UserLogin(user.Value, password.Value)
+	if err != nil {
+		updateCookie(w, "currentUser", "", expireTime)
+		updateCookie(w, "currentPassword", "", expireTime)
+		return false, ""
+	}
 
-	return ok, user.Value
+	return true, user.Value
 }
 
 func updateCookie(w http.ResponseWriter, cookieName, newVal string, expTime int) {
