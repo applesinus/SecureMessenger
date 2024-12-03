@@ -70,6 +70,4 @@ func startClient(port int, errCh chan error) {
 	log.Printf("[BACKEND][SERVER] Listening on port %d", port)
 
 	handlers.Init()
-
-	//return server
 }

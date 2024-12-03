@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"messengerClient/back/saved"
 	"os"
 	"sync"
 )
@@ -44,7 +45,30 @@ func LoadUsers(ctx context.Context, wg *sync.WaitGroup) {
 	defer file.Close()
 	<-ctx.Done()
 
+	Users.rwmu.Lock()
+	defer Users.rwmu.Unlock()
+	saveUsers()
+
 	wg.Done()
+}
+
+func saveUsers() {
+	body, err := json.Marshal(Users.users)
+	log.Printf("[BACKEND][USERS SAVE] Users: %s", string(body))
+	if err != nil {
+		log.Printf("[BACKEND][USERS SAVE] Error encoding file: %s", err)
+		return
+	}
+
+	file, err := os.OpenFile("back/users.json", os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		log.Fatalf("[BACKEND][USERS SAVE] Error opening file: %s", err)
+	}
+	defer file.Close()
+
+	file.Truncate(0)
+	file.Seek(0, 0)
+	file.Write(body)
 }
 
 func GetUsers() map[string]struct{} {
@@ -55,7 +79,8 @@ func Login(user string) {
 	Users.rwmu.Lock()
 	defer Users.rwmu.Unlock()
 	Users.users[user] = struct{}{}
-	Users.file.WriteString(user + "\n")
+
+	saveUsers()
 }
 
 func Logout(user string) {
@@ -77,6 +102,9 @@ func Logout(user string) {
 	Users.file.Truncate(0)
 	Users.file.Seek(0, 0)
 	Users.file.Write(newFileBuf)
+
+	saved.ClearChats(user)
+	saveUsers()
 }
 
 // OLD FUNCTIONS

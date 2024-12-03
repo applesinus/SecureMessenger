@@ -14,14 +14,31 @@ import (
 	"strings"
 )
 
+// Done
 func chatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/chats.html")
 	if err != nil {
 		log.Printf("[FRONT][TEMPLATE] Error parsing template: %s", err)
+		return
 	}
 
-	data.SecretChats = saved.GetChatsNames(data.User, "secret")
-	data.RegularChats = saved.GetChatsNames(data.User, "regular")
+	password, err := r.Cookie("currentPassword")
+	if err != nil {
+		log.Printf("[FRONT][TEMPLATE] Error getting cookie: %s", err)
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+	}
+
+	data.SecretChats, err = remoteserver.GetUserSecretChats(data.User, password.Value)
+	if err != nil {
+		log.Printf("[FRONT][TEMPLATE] Error getting secret chats: %s", err)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
+
+	data.RegularChats, err = remoteserver.GetUserChats(data.User, password.Value)
+	if err != nil {
+		log.Printf("[FRONT][TEMPLATE] Error getting regular chats: %s", err)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
 
 	data.Message = "Your chats"
 
@@ -31,13 +48,23 @@ func chatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	}
 }
 
+// Done
 func regularChatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/chats.html")
 	if err != nil {
 		log.Printf("[FRONT][TEMPLATE] Error parsing template: %s", err)
 	}
 
-	data.RegularChats = saved.GetChatsNames(data.User, "regular")
+	password, err := r.Cookie("currentPassword")
+	if err != nil {
+		log.Printf("[FRONT][TEMPLATE] Error getting cookie: %s", err)
+	}
+
+	data.RegularChats, err = remoteserver.GetUserChats(data.User, password.Value)
+	if err != nil {
+		log.Printf("[FRONT][TEMPLATE] Error getting regular chats: %s", err)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
 
 	data.Message = "Regular chats"
 
@@ -47,13 +74,23 @@ func regularChatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	}
 }
 
+// Done
 func secretChatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/chats.html")
 	if err != nil {
 		log.Printf("[FRONT][TEMPLATE] Error parsing template: %s", err)
 	}
 
-	data.SecretChats = saved.GetChatsNames(data.User, "secret")
+	password, err := r.Cookie("currentPassword")
+	if err != nil {
+		log.Printf("[FRONT][TEMPLATE] Error getting cookie: %s", err)
+	}
+
+	data.SecretChats, err = remoteserver.GetUserSecretChats(data.User, password.Value)
+	if err != nil {
+		log.Printf("[FRONT][TEMPLATE] Error getting secret chats: %s", err)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
 
 	data.Message = "Secret chats"
 
@@ -65,6 +102,12 @@ func secretChatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 
 func newChatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	if r.Method == "POST" {
+		password, err := r.Cookie("currentPassword")
+		if err != nil {
+			http.Redirect(w, r, "/newChat?alert=You are not logged in", http.StatusSeeOther)
+			return
+		}
+
 		recipient := r.FormValue("name")
 		if recipient == "" {
 			http.Redirect(w, r, "/newChat?alert=Empty name", http.StatusSeeOther)
@@ -81,12 +124,6 @@ func newChatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 			chatType = consts.EncriptionRC6
 		default:
 			http.Redirect(w, r, "/newChat?alert=Invalid chat type", http.StatusSeeOther)
-			return
-		}
-
-		password, err := r.Cookie("currentPassword")
-		if err != nil {
-			http.Redirect(w, r, "/newChat?alert=You are not logged in", http.StatusSeeOther)
 			return
 		}
 
@@ -117,6 +154,12 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	chatID := r.URL.Query().Get("id")
 	if chatID == "" {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	password, err := r.Cookie("currentPassword")
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
 
@@ -181,26 +224,29 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 		log.Printf("[FRONT][TEMPLATE] Error parsing template: %s", err)
 	}
 
-	data.Messages, data.Name = saved.GetMessages(data.User, chatID)
+	data.Messages, err = saved.GetMessages(data.User, password.Value, chatID)
+	if err != nil {
+		log.Printf("[FRONT][TEMPLATE] Error getting messages: %s", err)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	data.Name = strings.TrimRight(data.Name, ":")
 	if data.Messages == nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	// TEMP
-	data.Listeners = []string{
+	/*data.Listeners = []string{
 		chatID + ".0",
 	}
 
 	progressChan := remoteserver.SendMessage(chatID, r.FormValue("message"))
 	if progressChan != nil {
 		consts.AddListener(data.User, chatID+".0", progressChan)
-	}
+	}*/
 	// TEMP END
-
-	for idx := range data.Messages {
-		data.Messages[idx].Id = fmt.Sprint(idx)
-	}
 
 	data.Message = r.URL.Query().Get("id")
 	if data.Message == "" {

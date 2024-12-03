@@ -38,10 +38,10 @@ func Init() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// TEMP
 		// clear cookies to debug
-		cookies := r.Cookies()
+		/*cookies := r.Cookies()
 		for _, cookie := range cookies {
 			updateCookie(w, cookie.Name, "", 1)
-		}
+		}*/
 		// TEMP END
 
 		path := r.URL.Path

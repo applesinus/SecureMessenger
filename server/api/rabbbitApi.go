@@ -38,21 +38,23 @@ func CreateUser(ch *amqp.Channel, name, password string) error {
 	}
 
 	// Set request chat permissions
-	err = setPermissions(name, "request", true, false)
+	err = setPermissions(name, "request", true, true)
 	if err != nil {
 		return fmt.Errorf("[USER REGISTER] failed to set request permission: %w", err)
 	}
 
 	// Create response channel & set permissions
-	responseName := fmt.Sprintf("response:%s", name)
-	err = createChannel(ch, responseName, responseName, responseName)
-	if err != nil {
-		return fmt.Errorf("[USER REGISTER] failed to create response channel: %w", err)
-	}
+	if name != "guest" {
+		responseName := fmt.Sprintf("response:%s", name)
+		err = CreateChannel(ch, responseName, responseName, responseName)
+		if err != nil {
+			return fmt.Errorf("[USER REGISTER] failed to create response channel: %w", err)
+		}
 
-	err = setPermissions(name, responseName, true, false)
-	if err != nil {
-		return fmt.Errorf("[USER REGISTER] failed to set chat permission: %w", err)
+		err = setPermissions(name, responseName, true, true)
+		if err != nil {
+			return fmt.Errorf("[USER REGISTER] failed to set chat permission: %w", err)
+		}
 	}
 
 	// Logging new user registration
@@ -173,7 +175,7 @@ func setPermissions(user, exchange string, write, read bool) error {
 	return nil
 }
 
-func createChannel(ch *amqp.Channel, exchange, queue, routingKey string) error {
+func CreateChannel(ch *amqp.Channel, exchange, queue, routingKey string) error {
 	if err := ch.ExchangeDeclare(
 		exchange,
 		"direct",
@@ -208,10 +210,14 @@ func createChannel(ch *amqp.Channel, exchange, queue, routingKey string) error {
 		return fmt.Errorf("failed to bind queue: %w", err)
 	}
 
+	if strings.Contains(exchange, "guest") {
+		setPermissions("guest", exchange, false, true)
+	}
+
 	return nil
 }
 
-func StartChat(ch *amqp.Channel, user1, user2 string) (string, error) {
+func StartChat(ch *amqp.Channel, user1, user2 string, secret bool) (string, error) {
 	if ok, err := UserExists(user1); !ok {
 		if err != nil {
 			return "", fmt.Errorf("[CHAT CREATOR] %s", err)
@@ -253,17 +259,20 @@ func StartChat(ch *amqp.Channel, user1, user2 string) (string, error) {
 	}
 
 	newChatId += 1
-	channel12 := fmt.Sprintf("%s-%s:%d", user1, user2, newChatId)
-	chat12queue := fmt.Sprintf("queue_%s", channel12)
-	chat12exchange := fmt.Sprintf("exchange_%s", channel12)
-	channel21 := fmt.Sprintf("%s-%s:%d", user2, user1, newChatId)
-	chat21queue := fmt.Sprintf("queue_%s", channel21)
-	chat21exchange := fmt.Sprintf("exchange_%s", channel21)
+	strId := ""
+	if secret {
+		strId = fmt.Sprintf("S%d", newChatId)
+	} else {
+		strId = fmt.Sprintf("%d", newChatId)
+	}
 
-	err = createChannel(
+	channel12 := fmt.Sprintf("%s-%s:%s", user1, user2, strId)
+	channel21 := fmt.Sprintf("%s-%s:%s", user2, user1, strId)
+
+	err = CreateChannel(
 		ch,
-		chat12exchange,
-		chat12queue,
+		channel12,
+		channel12,
 		fmt.Sprintf("key_%s", channel12),
 	)
 	if err != nil {
@@ -271,20 +280,20 @@ func StartChat(ch *amqp.Channel, user1, user2 string) (string, error) {
 	}
 
 	//err = addPermission(user1, chat12exchange, true)
-	err = setPermissions(user1, chat12exchange, true, true)
+	err = setPermissions(user1, channel12, true, true)
 	if err != nil {
 		return "", fmt.Errorf("[CHAT CREATOR] Error adding permission for user %s: %s", user1, err)
 	}
 	//err = addPermission(user2, chat12exchange, false)
-	err = setPermissions(user2, chat12exchange, false, true)
+	err = setPermissions(user2, channel12, false, true)
 	if err != nil {
 		return "", fmt.Errorf("[CHAT CREATOR] Error adding permission for user %s: %s", user2, err)
 	}
 
-	err = createChannel(
+	err = CreateChannel(
 		ch,
-		chat21exchange,
-		chat21queue,
+		channel21,
+		channel21,
 		fmt.Sprintf("key_%s", channel21),
 	)
 	if err != nil {
@@ -292,17 +301,17 @@ func StartChat(ch *amqp.Channel, user1, user2 string) (string, error) {
 	}
 
 	//err = addPermission(user1, chat21exchange, false)
-	err = setPermissions(user1, chat21exchange, false, true)
+	err = setPermissions(user1, channel21, false, true)
 	if err != nil {
 		return "", fmt.Errorf("[CHAT CREATOR] Error adding permission for user %s: %s", user1, err)
 	}
 	//err = addPermission(user2, chat21exchange, true)
-	err = setPermissions(user2, chat21exchange, true, true)
+	err = setPermissions(user2, channel21, true, true)
 	if err != nil {
 		return "", fmt.Errorf("[CHAT CREATOR] Error adding permission for user %s: %s", user2, err)
 	}
 
-	return fmt.Sprint(newChatId), nil
+	return strId, nil
 }
 
 func UserExists(username string) (bool, error) {
@@ -386,15 +395,37 @@ func CreateGuestUser(ch *amqp.Channel) error {
 		return fmt.Errorf("failed to create guest user: %w", err)
 	}
 
-	err = setVhostPermission("guest", types.Permission{Configure: "", Write: ".*", Read: ".*"})
-	if err != nil {
-		return fmt.Errorf("failed to set vhost permission: %w", err)
-	}
-
-	err = setPermissions("guest", "request", true, false)
-	if err != nil {
-		return fmt.Errorf("failed to set guest permission: %w", err)
-	}
-
 	return nil
+}
+
+func GetUserChats(ch *amqp.Channel, username string, secret bool) ([]string, error) {
+	queues, err := getAllQueues()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all queues: %w", err)
+	}
+
+	userChats := []string{}
+
+	for _, queue := range queues {
+		parts := strings.Split(queue, ":")
+		if len(parts) != 2 {
+			continue
+		}
+
+		users := strings.Split(parts[0], "-")
+		if len(users) != 2 {
+			continue
+		}
+
+		if users[0] == username {
+			if secret && strings.Contains(parts[1], "S") {
+				userChats = append(userChats, fmt.Sprintf("%s:%s", users[1], parts[1]))
+			}
+			if !secret && !strings.Contains(parts[1], "S") {
+				userChats = append(userChats, fmt.Sprintf("%s:%s", users[1], parts[1]))
+			}
+		}
+	}
+
+	return userChats, nil
 }

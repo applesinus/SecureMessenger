@@ -7,6 +7,9 @@ var Recievers types.RecievedType
 
 func AddListener(user string, eventID string, listener chan int) {
 	EventListeners.Mu.Lock()
+	if _, ok := EventListeners.Events[user]; !ok {
+		EventListeners.Events[user] = make(map[string]chan int)
+	}
 	EventListeners.Events[user][eventID] = listener
 	EventListeners.Mu.Unlock()
 }

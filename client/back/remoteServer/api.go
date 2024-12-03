@@ -2,8 +2,12 @@ package remoteServer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
+	"messengerClient/back/crypto"
+	"messengerClient/types"
 	"os"
 	"strings"
 	"time"
@@ -39,6 +43,27 @@ func SendMessage(chatID string, message string) chan int {
 	return progress
 }
 
+func GetChatMessages(username, password, chatID string) ([]types.Message, error) {
+	resp, err := makeSeveralRequests(username, password, fmt.Sprintf("getChatMessages_%s", chatID))
+	if err != nil {
+		return nil, err
+	}
+
+	messages := make([]types.Message, 0)
+
+	for _, msg := range resp {
+		message := types.Message{}
+		err = json.Unmarshal(msg, &message)
+		if err != nil {
+			return nil, err
+		}
+
+		messages = append(messages, message)
+	}
+
+	return messages, nil
+}
+
 func SendFile(chatID string, file *os.File) chan int {
 	// TODO
 	progress := make(chan int)
@@ -69,7 +94,7 @@ func SendFile(chatID string, file *os.File) chan int {
 }
 
 func CreateChat(user, password string, recipient string) (string, error) {
-	resp, err := makeRequest(user, password, fmt.Sprintf("createRegularChat_%s", recipient))
+	resp, err := makeRequest(user, password, fmt.Sprintf("createRegularChat_%s", recipient), "")
 	if err != nil {
 		return "", err
 	}
@@ -93,8 +118,10 @@ func CreateSecretChat(sender string, recipient string, cipherType string) error 
 
 // RabbitMQ user funcs
 
-func UserExists(name string) (bool, error) {
-	resp, err := makeRequest("guest", "guest", "userExists_"+name)
+func UserExists(username string) (bool, error) {
+	reqId := createRequestId()
+
+	resp, err := makeRequest("guest", "guest", fmt.Sprintf("userExists_%s", username), reqId)
 	if err != nil {
 		return false, err
 	}
@@ -102,6 +129,10 @@ func UserExists(name string) (bool, error) {
 }
 
 func UserLogin(username, password string) error {
+	if username == "" || password == "" {
+		return fmt.Errorf("username or password is empty")
+	}
+
 	conn, err := amqp.Dial(fmt.Sprintf("amqp://%s:%s@localhost:5672/", username, password))
 	if err != nil {
 		return fmt.Errorf("failed to login to RabbitMQ: %v", err)
@@ -110,16 +141,18 @@ func UserLogin(username, password string) error {
 	return nil
 }
 
-func UserRegister(name string, password string) error {
-	ok, err := UserExists(name)
+func UserRegister(username string, password string) error {
+	ok, err := UserExists(username)
 	if err != nil {
 		return fmt.Errorf("failed to check user existence: %v", err)
 	}
 	if ok {
-		return fmt.Errorf("user %s already exists", name)
+		return fmt.Errorf("user %s already exists", username)
 	}
 
-	resp, err := makeRequest("guest", "guest", fmt.Sprintf("register_%s_%s", name, password))
+	reqId := createRequestId()
+
+	resp, err := makeRequest("guest", "guest", fmt.Sprintf("register_%s_%s", username, password), reqId)
 	if err != nil {
 		return err
 	}
@@ -131,36 +164,69 @@ func UserRegister(name string, password string) error {
 	return nil
 }
 
-func GetUserChats(name string) []string {
-	return nil
+func GetUserChats(username, password string) ([]string, error) {
+	resp, err := makeRequest(username, password, "getUserChats", "")
+	if err != nil {
+		return make([]string, 0), err
+	}
+
+	if !strings.HasPrefix(resp, "ok_") {
+		return make([]string, 0), fmt.Errorf("failed to get user chats: %s", resp)
+	}
+
+	chats := strings.Split(strings.TrimPrefix(resp, "ok_"), "_")
+
+	if len(chats) == 1 && chats[0] == "" {
+		return make([]string, 0), nil
+	}
+
+	return chats, nil
 }
 
-func GetUserSecretChats(name string) []string {
-	return nil
+func GetUserSecretChats(username, password string) ([]string, error) {
+	resp, err := makeRequest(username, password, "getUserSecretChats", "")
+	if err != nil {
+		return make([]string, 0), err
+	}
+
+	if !strings.HasPrefix(resp, "ok_") {
+		return make([]string, 0), fmt.Errorf("failed to get user chats: %s", resp)
+	}
+
+	chats := strings.Split(strings.TrimPrefix(resp, "ok_"), "_")
+
+	if len(chats) == 1 && chats[0] == "" {
+		return make([]string, 0), nil
+	}
+
+	return chats, nil
 }
 
 // RabbitMQ helpers
 
-func connectToRabbit(username, password string) (*amqp.Channel, error) {
+func connectToRabbit(username, password string) (*amqp.Connection, error) {
 	conn, err := amqp.Dial(fmt.Sprintf("amqp://%s:%s@localhost:5672/", username, password))
 	if err != nil {
 		return nil, fmt.Errorf("Failed to connect to RabbitMQ: %v", err)
+	}
+
+	return conn, nil
+}
+
+func makeRequest(username, password, request, requestId string) (string, error) {
+	conn, err := connectToRabbit(username, password)
+	if err != nil {
+		return "", fmt.Errorf("failed to make request: %v", err)
 	}
 	defer conn.Close()
 
 	ch, err := conn.Channel()
 	if err != nil {
-		return nil, fmt.Errorf("failed to open a channel: %v", err)
+		return "", fmt.Errorf("failed to open a channel: %v", err)
 	}
+	defer ch.Close()
 
-	return ch, nil
-}
-
-func makeRequest(username, password, request string) (string, error) {
-	ch, err := connectToRabbit(username, password)
-	if err != nil {
-		return "", fmt.Errorf("failed to make request: %v", err)
-	}
+	log.Printf("[SERVER][RABBIT] Sending a request: %s from %s:%s", request, username, password)
 
 	err = ch.Publish(
 		"request",
@@ -168,6 +234,11 @@ func makeRequest(username, password, request string) (string, error) {
 		false,
 		false,
 		amqp.Publishing{
+			Headers: amqp.Table{
+				"requestId": requestId,
+				"username":  username,
+				"password":  password,
+			},
 			ContentType: "text/plain",
 			Body:        []byte(request),
 		})
@@ -176,13 +247,160 @@ func makeRequest(username, password, request string) (string, error) {
 		return "", fmt.Errorf("failed to publish a message: %v", err)
 	}
 
-	return "", nil
+	responseChannel := ""
+	if username == "guest" {
+		responseChannel = fmt.Sprintf("response:%s:%s", username, requestId)
+	} else {
+		responseChannel = fmt.Sprintf("response:%s", username)
+	}
+
+	log.Printf("[SERVER][RABBIT] Waiting for a response: %s", responseChannel)
+
+	ch.Close()
+
+	time.Sleep(time.Second * 1)
+
+	ch, err = conn.Channel()
+	if err != nil {
+		return "", fmt.Errorf("failed to open a consuming channel: %v", err)
+	}
+	defer ch.Close()
+	resp, err := ch.Consume(
+		responseChannel,
+		"",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+
+	if err != nil {
+		return "", fmt.Errorf("failed to consume a queue: %v", err)
+	}
+
+	respCh := make(chan *amqp.Delivery)
+	ctx, _ := context.WithDeadline(context.Background(), time.Now().Add(30*time.Second))
+	log.Printf("[SERVER][RABBIT] Waiting for a response...")
+	go func() {
+		select {
+		case <-ctx.Done():
+			respCh <- nil
+		case msg := <-resp:
+			respCh <- &msg
+		}
+	}()
+
+	response := <-respCh
+	if response == nil {
+		return "", fmt.Errorf("request timed out after 30 seconds")
+	}
+
+	return string(response.Body), nil
+}
+
+func makeSeveralRequests(username, password, request string) ([][]byte, error) {
+	conn, err := connectToRabbit(username, password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %v", err)
+	}
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open a channel: %v", err)
+	}
+	defer ch.Close()
+
+	log.Printf("[SERVER][RABBIT] Sending a request: %s from %s:%s", request, username, password)
+
+	err = ch.Publish(
+		"request",
+		"request",
+		false,
+		false,
+		amqp.Publishing{
+			Headers: amqp.Table{
+				"requestId": "",
+				"username":  username,
+				"password":  password,
+			},
+			ContentType: "text/plain",
+			Body:        []byte(request),
+		})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to publish a message: %v", err)
+	}
+
+	responseChannel := fmt.Sprintf("response:%s", username)
+
+	log.Printf("[SERVER][RABBIT] Waiting for a response: %s", responseChannel)
+
+	ch.Close()
+
+	ch, err = conn.Channel()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open a consuming channel: %v", err)
+	}
+	defer ch.Close()
+	resp, err := ch.Consume(
+		responseChannel,
+		"",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to consume a queue: %v", err)
+	}
+
+	respCh := make(chan *amqp.Delivery)
+	log.Printf("[SERVER][RABBIT] Waiting for a response...")
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+
+	go func() {
+		for {
+			select {
+			case <-timer.C:
+				respCh <- nil
+				return
+
+			case msg := <-resp:
+				respCh <- &msg
+				timer.Reset(10 * time.Second)
+			}
+		}
+	}()
+
+	responses := make([][]byte, 0)
+	for {
+		select {
+		case <-timer.C:
+			return responses, nil
+		case response := <-respCh:
+			if response == nil {
+				return responses, nil
+			}
+			responses = append(responses, response.Body)
+		}
+	}
 }
 
 func ListenToRabbit(ctx context.Context, username, password string) {
-	ch, err := connectToRabbit(username, password)
+	conn, err := connectToRabbit(username, password)
 	if err != nil {
 		log.Printf("[SERVER][RABBIT LISTENER] Failed to connect to RabbitMQ: %v", err)
+		return
+	}
+
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Printf("[SERVER][RABBIT LISTENER] Failed to open a channel: %v", err)
 		return
 	}
 
@@ -218,4 +436,8 @@ func RabbitIsConnected() bool {
 	}
 	conn.Close()
 	return true
+}
+
+func createRequestId() string {
+	return crypto.Hash(fmt.Sprintf("%d", time.Now().UnixNano()+rand.Int63()))
 }

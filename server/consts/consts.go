@@ -1,12 +1,17 @@
 package consts
 
-import "log"
+import (
+	"log"
+)
 
 const (
-	RabbitmqAPI      = "http://localhost:15672/api"
-	RabbitmqUser     = "guest"
-	RabbitmqPassword = "guest"
-	Vhost            = "%2F"
+	RabbitmqAPI = "http://localhost:15672/api"
+	Vhost       = "%2F"
+)
+
+var (
+	RabbitmqUser     = "admin"
+	RabbitmqPassword = "admin"
 )
 
 func LogIfError(err error, msg string) bool {

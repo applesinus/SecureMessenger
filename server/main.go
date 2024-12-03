@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/streadway/amqp"
 
@@ -38,7 +39,10 @@ func main() {
 	}
 	go listenRequests(ctx, conn)
 
-	api.CreateGuestUser(ch)
+	err = api.CreateGuestUser(ch)
+	if err != nil {
+		log.Printf("Guest registration error: %v", err)
+	}
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -72,68 +76,107 @@ func listenRequests(ctx context.Context, conn *amqp.Connection) {
 		return
 	}
 
-	select {
-	case <-ctx.Done():
-		return
+	for {
+		select {
+		case <-ctx.Done():
+			return
 
-	case msg := <-messages:
-		log.Printf("Received a request: %s", msg.Body)
-		body := string(msg.Body)
+		case msg := <-messages:
+			log.Printf("Received a request: %s", msg.Body)
+			body := string(msg.Body)
 
-		// Check if user exists
-		if strings.Contains(body, "userExists_") {
-			parts := strings.Split(body, "_")
-			if len(parts) != 2 {
-				log.Printf("[REQUEST LISTENER] Failed to parse request: %s", body)
-				respond(conn, msg.UserId, "false")
+			userId := msg.Headers["username"].(string)
+			reqId := ""
+			if userId == "guest" {
+				reqId = msg.Headers["requestId"].(string)
 			}
 
-			targetUser := parts[1]
-			ok, err := api.UserExists(targetUser)
+			log.Printf("[REQUEST LISTENER] Responding to %s", userId)
 
-			if err != nil {
-				log.Printf("[REQUEST LISTENER] Failed to check if user exists: %v", err)
-				ok = false
-			}
-			if err := respond(conn, msg.UserId, fmt.Sprintf("%t", ok)); err != nil {
-				log.Printf("[REQUEST LISTENER] Failed to respond: %v", err)
-			}
-		}
+			// Check if user exists
+			if strings.Contains(body, "userExists_") {
+				parts := strings.Split(body, "_")
+				if len(parts) != 2 {
+					log.Printf("[REQUEST LISTENER] Failed to parse request: %s", body)
+					if err := respond(conn, userId, reqId, "false"); err != nil {
+						log.Printf("[REQUEST LISTENER] Failed to respond: %v", err)
+					}
+					break
+				}
 
-		// Register user
-		if strings.Contains(body, "register_") {
-			parts := strings.Split(body, "_")
-			if len(parts) != 3 {
-				log.Printf("[REQUEST LISTENER] Failed to parse request: %s", body)
-				respond(conn, msg.UserId, fmt.Sprintf("not 3 parts but %d", len(parts)))
-			}
+				targetUser := parts[1]
+				ok, err := api.UserExists(targetUser)
 
-			targetUser := parts[1]
-			targetPassword := parts[2]
+				if err != nil {
+					log.Printf("[REQUEST LISTENER] Failed to check if user exists: %v", err)
+					ok = false
+				}
+				if err := respond(conn, userId, reqId, fmt.Sprintf("%t", ok)); err != nil {
+					log.Printf("[REQUEST LISTENER] Failed to respond: %v", err)
+				}
 
-			if err := api.CreateUser(ch, targetUser, targetPassword); err != nil {
-				log.Printf("[REQUEST LISTENER] %v", err)
-				respond(conn, msg.UserId, fmt.Sprintf("%v", err))
-			}
-		}
-
-		// Create regular chat
-		if strings.Contains(body, "createRegularChat_") {
-			parts := strings.Split(body, "_")
-			if len(parts) != 2 {
-				log.Printf("[REQUEST LISTENER] Failed to parse request: %s", body)
-				respond(conn, msg.UserId, fmt.Sprintf("not 2 parts but %d", len(parts)))
+				break
 			}
 
-			targetUser := parts[1]
+			// Register user
+			if strings.Contains(body, "register_") {
+				parts := strings.Split(body, "_")
+				if len(parts) != 3 {
+					log.Printf("[REQUEST LISTENER] Failed to parse request: %s", body)
+					respond(conn, userId, reqId, fmt.Sprintf("not 3 parts but %d", len(parts)))
+				}
 
-			id, err := api.StartChat(ch, msg.UserId, targetUser)
-			if err != nil {
-				log.Printf("[REQUEST LISTENER] %v", err)
-				respond(conn, msg.UserId, fmt.Sprintf("%v", err))
+				targetUser := parts[1]
+				targetPassword := parts[2]
+
+				if err := api.CreateUser(ch, targetUser, targetPassword); err != nil {
+					log.Printf("[REQUEST LISTENER] %v", err)
+					respond(conn, userId, reqId, fmt.Sprintf("%v", err))
+				}
+
+				respond(conn, userId, reqId, "ok")
 			}
 
-			respond(conn, msg.UserId, fmt.Sprintf("ok_%s", id))
+			// Get regular chats
+			if strings.Contains(body, "getUserChats") {
+				chats, err := api.GetUserChats(ch, userId, false)
+				if err != nil {
+					log.Printf("[REQUEST LISTENER] %v", err)
+					respond(conn, userId, reqId, fmt.Sprintf("%v", err))
+				}
+
+				respond(conn, userId, reqId, fmt.Sprintf("ok_%s", strings.Join(chats, "_")))
+			}
+
+			// Get secret chats
+			if strings.Contains(body, "getUserSecretChats") {
+				chats, err := api.GetUserChats(ch, userId, true)
+				if err != nil {
+					log.Printf("[REQUEST LISTENER] %v", err)
+					respond(conn, userId, reqId, fmt.Sprintf("%v", err))
+				}
+
+				respond(conn, userId, reqId, fmt.Sprintf("ok_%s", strings.Join(chats, "_")))
+			}
+
+			// Create regular chat
+			if strings.Contains(body, "createRegularChat_") {
+				parts := strings.Split(body, "_")
+				if len(parts) != 2 {
+					log.Printf("[REQUEST LISTENER] Failed to parse request: %s", body)
+					respond(conn, userId, reqId, fmt.Sprintf("not 2 parts but %d", len(parts)))
+				}
+
+				targetUser := parts[1]
+
+				id, err := api.StartChat(ch, userId, targetUser, false)
+				if err != nil {
+					log.Printf("[REQUEST LISTENER] %v", err)
+					respond(conn, userId, reqId, fmt.Sprintf("%v", err))
+				}
+
+				respond(conn, userId, reqId, fmt.Sprintf("ok_%s", id))
+			}
 		}
 	}
 }
@@ -178,7 +221,7 @@ func createRequestsExchange(ch *amqp.Channel) error {
 	return nil
 }
 
-func respond(conn *amqp.Connection, user, message string) error {
+func respond(conn *amqp.Connection, user, reqId, message string) error {
 	ch, err := conn.Channel()
 	if err != nil {
 		return fmt.Errorf("failed to open a channel: %v", err)
@@ -186,6 +229,16 @@ func respond(conn *amqp.Connection, user, message string) error {
 	defer ch.Close()
 
 	responseID := fmt.Sprintf("response:%s", user)
+	if reqId != "" {
+		responseID = fmt.Sprintf("%s:%s", responseID, reqId)
+	}
+
+	if user == "guest" {
+		err = api.CreateChannel(ch, responseID, responseID, responseID)
+		if err != nil {
+			return fmt.Errorf("failed to create exchange: %v", err)
+		}
+	}
 
 	err = ch.Publish(
 		responseID,
@@ -199,6 +252,29 @@ func respond(conn *amqp.Connection, user, message string) error {
 
 	if err != nil {
 		return fmt.Errorf("failed to publish a message: %v", err)
+	}
+
+	if user == "guest" {
+		go func() {
+			ch, err := conn.Channel()
+			if err != nil {
+				log.Printf("[SERVER][RABBIT] Failed to open a channel: %v", err)
+				return
+			}
+			defer ch.Close()
+
+			time.Sleep(30 * time.Second)
+			_, err = ch.QueueDelete(responseID, false, false, false)
+			if err != nil {
+				log.Printf("[SERVER][RABBIT] Failed to delete queue: %v", err)
+			}
+			err = ch.ExchangeDelete(responseID, false, false)
+			if err != nil {
+				log.Printf("[SERVER][RABBIT] Failed to delete exchange: %v", err)
+			}
+
+			log.Println("[SERVER][RABBIT] Ended closing response")
+		}()
 	}
 
 	return nil

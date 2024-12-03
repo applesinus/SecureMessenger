@@ -9,21 +9,12 @@ import (
 	"messengerClient/types"
 	"os"
 	"strconv"
+	"sync"
 )
 
 var SavedChats map[string]types.Chats
 
 func RestoreChats() {
-	// TEMP
-	// clear file to debug
-	fileT, err := os.OpenFile("back/saved/chats/chats.json", os.O_RDWR|os.O_CREATE, 0666)
-	if err != nil {
-		log.Printf("[BACKEND][CHATS RESTORE] Error opening file: %s", err)
-	}
-	fileT.Truncate(0)
-	fileT.Close()
-	// TEMP END
-
 	file, err := os.OpenFile("back/saved/chats/chats.json", os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		log.Printf("[BACKEND][CHATS RESTORE] Error opening file: %s", err)
@@ -44,6 +35,8 @@ func RestoreChats() {
 	for user := range restoredChats {
 		SavedChats[user] = restoredChats[user]
 	}
+
+	SaveChats()
 
 	// TEMP
 	/*chats := types.Chats{
@@ -135,6 +128,7 @@ func SaveChats() {
 	defer file.Close()
 
 	file.Truncate(0)
+	file.Seek(0, 0)
 	file.Write(buff)
 }
 
@@ -177,15 +171,27 @@ func GetChatsNames(user string, chatype ...string) [][]string {
 	return chatNames
 }
 
-func GetMessages(user, chatId string) ([]types.Message, string) {
-	if SavedChats[user].Chats[chatId] == nil {
-		return nil, ""
+func GetMessages(user, password, chatId string) ([]types.Message, error) {
+	messages, err := remoteServer.GetChatMessages(user, password, chatId)
+
+	if err != nil {
+		if _, ok := SavedChats[user].Chats[chatId]; !ok {
+			return nil, err
+		}
+		return SavedChats[user].Chats[chatId].Messages, nil
 	}
 
-	return SavedChats[user].Chats[chatId].Messages, SavedChats[user].Chats[chatId].Reciever
+	return messages, nil
 }
 
 func NewChat(user, password, reciever, encryption string) (string, error) {
+	if _, ok := SavedChats[user]; !ok {
+		SavedChats[user] = types.Chats{
+			Chats: make(map[string]*types.ChatType),
+			Mu:    new(sync.Mutex),
+		}
+	}
+
 	SavedChats[user].Mu.Lock()
 	defer SavedChats[user].Mu.Unlock()
 
@@ -222,5 +228,19 @@ func NewChat(user, password, reciever, encryption string) (string, error) {
 
 	SavedChats[user].Chats[id] = &newChat
 
+	SaveChats()
+
 	return id, nil
+}
+
+func ClearChats(user string) {
+	if _, ok := SavedChats[user]; !ok {
+		return
+	}
+
+	SavedChats[user].Mu.Lock()
+	defer SavedChats[user].Mu.Unlock()
+	delete(SavedChats, user)
+
+	SaveChats()
 }

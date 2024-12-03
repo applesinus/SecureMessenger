@@ -1,61 +1,18 @@
 {
-  "kekus": {
+  "lolus": {
     "Mu": {},
     "Chats": {
+      "0": {
+        "id": "0",
+        "reciever": "kekus",
+        "encryption": "no",
+        "messages": []
+      },
       "1": {
         "id": "1",
-        "reciever": "General Grievous",
+        "reciever": "kekus",
         "encryption": "no",
-        "messages": [
-          {
-            "Id": "0",
-            "Message": "Hello there",
-            "Type": "text",
-            "Author": "kekus"
-          },
-          {
-            "Id": "1",
-            "Message": "General Kenobi! You are a bold one.",
-            "Type": "text",
-            "Author": "General Grievous"
-          },
-          {
-            "Id": "2",
-            "Message": "Kill him!",
-            "Type": "text",
-            "Author": "General Grievous"
-          },
-          {
-            "Id": "3",
-            "Message": "[Droids fail to kill Obi-Wan]",
-            "Type": "text",
-            "Author": "Battle Droids"
-          },
-          {
-            "Id": "4",
-            "Message": "[Other droids surround him]",
-            "Type": "text",
-            "Author": "Battle Droids"
-          },
-          {
-            "Id": "5",
-            "Message": "Back away! I will deal with this Jedi scum myself!",
-            "Type": "text",
-            "Author": "General Grievous"
-          },
-          {
-            "Id": "6",
-            "Message": "Your move!",
-            "Type": "text",
-            "Author": "kekus"
-          },
-          {
-            "Id": "7",
-            "Message": "meme.jpeg",
-            "Type": "image",
-            "Author": "kekus"
-          }
-        ]
+        "messages": []
       }
     }
   }

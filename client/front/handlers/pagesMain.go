@@ -6,6 +6,7 @@ import (
 	"log"
 	"messengerClient/back/crypto"
 	"messengerClient/back/remoteServer"
+	"messengerClient/back/users"
 	"messengerClient/types"
 	"net/http"
 )
@@ -52,6 +53,7 @@ func loginPage(w http.ResponseWriter, r *http.Request) {
 
 		updateCookie(w, "currentUser", username, expireTime)
 		updateCookie(w, "currentPassword", password, expireTime)
+		users.Login(username)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -103,8 +105,10 @@ func registerPage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		log.Printf("Registered user: %s:%s", username, password)
 		updateCookie(w, "currentUser", username, expireTime)
 		updateCookie(w, "currentPassword", crypto.Hash(password), expireTime)
+		users.Login(username)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -129,6 +133,14 @@ func registerPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func logoutPage(w http.ResponseWriter, r *http.Request) {
+	user, err := r.Cookie("currentUser")
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	users.Logout(user.Value)
+
 	updateCookie(w, "currentUser", "", 1)
 	updateCookie(w, "currentPassword", "", 1)
 

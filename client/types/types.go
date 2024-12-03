@@ -3,11 +3,11 @@ package types
 import "sync"
 
 type Message struct {
-	Id      string
-	Message string
+	Id      string `json:"id"`
+	Message string `json:"message"`
 
-	Type   string
-	Author string
+	Type   string `json:"type"`
+	Author string `json:"author"`
 }
 
 type EventsType struct {
@@ -37,8 +37,8 @@ type Data struct {
 	Message      string
 	Name         string
 	Alert        string
-	RegularChats [][]string
-	SecretChats  [][]string
+	RegularChats []string
+	SecretChats  []string
 	Messages     []Message
 	Listeners    []string
 }
