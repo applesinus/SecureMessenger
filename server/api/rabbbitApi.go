@@ -273,7 +273,7 @@ func StartChat(ch *amqp.Channel, user1, user2 string, secret bool) (string, erro
 		ch,
 		channel12,
 		channel12,
-		fmt.Sprintf("key_%s", channel12),
+		channel12,
 	)
 	if err != nil {
 		return "", fmt.Errorf("[CHAT CREATOR] Error creating channel between %s and %s: %s", user1, user2, err)
@@ -294,7 +294,7 @@ func StartChat(ch *amqp.Channel, user1, user2 string, secret bool) (string, erro
 		ch,
 		channel21,
 		channel21,
-		fmt.Sprintf("key_%s", channel21),
+		channel21,
 	)
 	if err != nil {
 		return "", fmt.Errorf("[CHAT CREATOR] Error creating channel between %s and %s: %s", user2, user1, err)

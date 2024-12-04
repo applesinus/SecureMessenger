@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 // Done
@@ -167,10 +168,21 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 		var progressChan chan int
 
 		if r.FormValue("message") != "" {
-			progressChan = remoteserver.SendMessage(chatID, r.FormValue("message"))
-			saved.AddMessage(data.User, chatID, types.Message{Author: data.User, Type: "text", Message: r.FormValue("message")})
+			message := types.Message{
+				Author:  data.User,
+				Message: r.FormValue("message"),
+				Type:    "text",
+				Id:      fmt.Sprintf("%v", time.Now()),
+			}
+
+			log.Printf("[BACKEND][MESSAGE] Sending message: %s", message.Message)
+
+			progressChan = remoteserver.SendMessage(data.User, password.Value, chatID, message)
+			saved.AddMessage(data.User, chatID, message)
+			consts.AddListener(data.User, chatID, message.Id, progressChan)
 		}
 
+		// TODO
 		if r.FormValue("file") != "" {
 			r.ParseMultipartForm(10 << 20)
 			file, handler, err := r.FormFile("file")
@@ -213,16 +225,22 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 			progressChan = remoteserver.SendFile(chatID, savedFile)
 			saved.AddMessage(data.User, chatID, types.Message{Author: data.User, Type: "file", Message: filename})
 		}
-
-		if progressChan != nil {
-			consts.AddListener(data.User, chatID, progressChan)
-		}
 	}
 
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/chat.html")
 	if err != nil {
 		log.Printf("[FRONT][TEMPLATE] Error parsing template: %s", err)
 	}
+
+	chat := strings.Split(r.URL.Query().Get("id"), ":")
+	if len(chat) != 2 {
+		log.Printf("[FRONT][TEMPLATE] Error getting chat id: %s", err)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	data.Name = chat[0]
+	data.Message = chat[1]
 
 	data.Messages, err = saved.GetMessages(data.User, password.Value, chatID)
 	if err != nil {
@@ -231,26 +249,9 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 		return
 	}
 
-	data.Name = strings.TrimRight(data.Name, ":")
-	if data.Messages == nil {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-
-	// TEMP
-	/*data.Listeners = []string{
-		chatID + ".0",
-	}
-
-	progressChan := remoteserver.SendMessage(chatID, r.FormValue("message"))
-	if progressChan != nil {
-		consts.AddListener(data.User, chatID+".0", progressChan)
-	}*/
-	// TEMP END
-
-	data.Message = r.URL.Query().Get("id")
-	if data.Message == "" {
-		data.Message = "-1"
+	data.Listeners = make([]string, 0)
+	for key := range consts.EventListeners.Events[data.User][chatID] {
+		data.Listeners = append(data.Listeners, key)
 	}
 
 	err = t.Execute(w, data)
@@ -280,29 +281,43 @@ func updateChatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 		return
 	}
 
+	chatId := r.URL.Query().Get("chat")
+	if chatId == "" {
+		fmt.Fprintf(w, "data: -1\n\n")
+		flusher.Flush()
+
+		return
+	}
+
 	userUpdates := consts.EventListeners.Events[user]
 	if userUpdates == nil {
 		consts.EventListeners.Mu.Lock()
-		consts.EventListeners.Events[user] = make(map[string]chan int)
+		consts.EventListeners.Events[user] = make(map[string]map[string]chan int)
 		userUpdates = consts.EventListeners.Events[user]
 		consts.EventListeners.Mu.Unlock()
 	}
 
-	if userUpdates[eventID] == nil {
+	if userUpdates[chatId] == nil {
+		consts.EventListeners.Mu.Lock()
+		userUpdates[chatId] = make(map[string]chan int)
+		consts.EventListeners.Mu.Unlock()
+	}
+
+	if userUpdates[chatId][eventID] == nil {
 		fmt.Fprintf(w, "data: 0\n\n")
 		flusher.Flush()
 		return
 	}
 
 	for {
-		if userUpdates[eventID] == nil {
+		if userUpdates[chatId][eventID] == nil {
 			fmt.Fprintf(w, "data: 0\n\n")
 			flusher.Flush()
 
 			break
 		}
 
-		progress := <-userUpdates[eventID]
+		progress := <-userUpdates[chatId][eventID]
 		fmt.Fprintf(w, "data: %d\n\n", progress)
 		flusher.Flush()
 

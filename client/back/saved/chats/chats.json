@@ -1,19 +1,6 @@
 {
-  "lolus": {
+  "kekus": {
     "Mu": {},
-    "Chats": {
-      "0": {
-        "id": "0",
-        "reciever": "kekus",
-        "encryption": "no",
-        "messages": []
-      },
-      "1": {
-        "id": "1",
-        "reciever": "kekus",
-        "encryption": "no",
-        "messages": []
-      }
-    }
+    "Chats": {}
   }
 }

@@ -8,8 +8,8 @@ import (
 	"messengerClient/consts"
 	"messengerClient/types"
 	"os"
-	"strconv"
 	"sync"
+	"time"
 )
 
 var SavedChats map[string]types.Chats
@@ -139,10 +139,11 @@ func AddMessage(user, chatId string, message types.Message) {
 
 	for _, chat := range SavedChats[user].Chats {
 		if chat.Id == chatId {
-			message.Id = strconv.Itoa(len(chat.Messages))
 			chat.Messages = append(chat.Messages, message)
 		}
 	}
+
+	SaveChats()
 }
 
 // chatype can be "regular" or "secret" (or empty for all)
@@ -172,16 +173,73 @@ func GetChatsNames(user string, chatype ...string) [][]string {
 }
 
 func GetMessages(user, password, chatId string) ([]types.Message, error) {
-	messages, err := remoteServer.GetChatMessages(user, password, chatId)
+	var err error
 
+	messagesOnServer, err := remoteServer.GetChatMessages(user, password, chatId)
 	if err != nil {
-		if _, ok := SavedChats[user].Chats[chatId]; !ok {
-			return nil, err
-		}
-		return SavedChats[user].Chats[chatId].Messages, nil
+		err = consts.ErrOnServer(err)
+		messagesOnServer = make([]types.Message, 0)
 	}
 
-	return messages, nil
+	_, ok := SavedChats[user]
+	if !ok {
+		SavedChats[user] = types.Chats{
+			Mu:    new(sync.Mutex),
+			Chats: make(map[string]*types.ChatType),
+		}
+
+		if err != nil {
+			return nil, consts.ErrNoChat
+		}
+	}
+
+	chatOnDisk, ok := SavedChats[user].Chats[chatId]
+	if !ok {
+		if err != nil {
+			return nil, consts.ErrNoChat
+		} else {
+			SavedChats[user].Chats[chatId] = &types.ChatType{
+				Id:         chatId,
+				Reciever:   messagesOnServer[0].Author,
+				Encryption: consts.EncriptionNo,
+				Messages:   messagesOnServer,
+			}
+
+			return messagesOnServer, nil
+		}
+	}
+
+	messagesInChat := messagesOnServer
+	for _, message := range chatOnDisk.Messages {
+		after := -1
+		for i, msg := range messagesInChat {
+			if message.Id == msg.Id {
+				break
+			}
+
+			timeInChat, err := time.Parse(time.RFC3339, msg.Id)
+			if err != nil {
+				continue
+			}
+
+			timeOnServer, err := time.Parse(time.RFC3339, message.Id)
+			if err != nil {
+				continue
+			}
+
+			if timeOnServer.After(timeInChat) {
+				after = i
+			}
+		}
+
+		if after < len(messagesInChat)-1 {
+			messagesInChat = append(messagesInChat[:after], append(messagesInChat[after+1:], message)...)
+		} else {
+			messagesInChat = append(messagesInChat, message)
+		}
+	}
+
+	return messagesInChat, nil
 }
 
 func NewChat(user, password, reciever, encryption string) (string, error) {
@@ -226,7 +284,7 @@ func NewChat(user, password, reciever, encryption string) (string, error) {
 		return "", fmt.Errorf("chat with id %s already exists on local device but not on server, please contact admin", id)
 	}
 
-	SavedChats[user].Chats[id] = &newChat
+	SavedChats[user].Chats[fmt.Sprintf("%s:%s", reciever, id)] = &newChat
 
 	SaveChats()
 

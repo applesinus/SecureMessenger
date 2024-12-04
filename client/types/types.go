@@ -12,7 +12,7 @@ type Message struct {
 
 type EventsType struct {
 	Mu     *sync.Mutex
-	Events map[string]map[string]chan int
+	Events map[string]map[string]map[string]chan int
 }
 
 type RecievedType struct {

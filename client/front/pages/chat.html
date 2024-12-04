@@ -109,7 +109,7 @@
     <div class="chat">
         <p>
             <h1>
-                Chat {{.Message}} with {{.Name}}
+                Chat #{{.Message}} with {{.Name}}
             </h1>
         </p>
 
@@ -138,7 +138,7 @@
                                 </p>
                                     
                                 {{range $i, $listener := $.Listeners}}
-                                    {{if eq (printf "%v.%v" $.Message $message.Id) $listener}}
+                                    {{if eq (printf "%v:%$v.%v" $.Name $.Message $message.Id) $listener}}
                                         <p style="font-size: 10px; margin: 0; color: grey;"><span id="progressBar_{{$listener}}">Ok</span></p>
                                     {{end}}
                                 {{end}}
@@ -196,7 +196,7 @@
 
     {{range $i, $listener := .Listeners}}
         {
-            eventSource = new EventSource("/chat/update?name={{$listener}}");
+            eventSource = new EventSource("/chat/update?name={{$listener}}&chat={{$.Name}}:{{$.Message}}");
 
             eventSource.onmessage = function(event) {
                 message = ""

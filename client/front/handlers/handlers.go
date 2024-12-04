@@ -17,11 +17,11 @@ func Init() {
 	avaliableUsers := users.GetUsers()
 
 	consts.EventListeners = types.EventsType{
-		Events: make(map[string]map[string]chan int),
+		Events: make(map[string]map[string]map[string]chan int),
 		Mu:     new(sync.Mutex),
 	}
 	for users := range avaliableUsers {
-		consts.EventListeners.Events[users] = make(map[string]chan int)
+		consts.EventListeners.Events[users] = make(map[string]map[string]chan int)
 	}
 
 	consts.Recievers = types.RecievedType{
@@ -31,9 +31,6 @@ func Init() {
 	for users := range avaliableUsers {
 		consts.Recievers.Events[users] = make(map[string]chan []byte)
 	}
-
-	http.HandleFunc("/login", loginPage)
-	http.HandleFunc("/register", registerPage)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// TEMP
@@ -50,7 +47,7 @@ func Init() {
 		}
 
 		ok, username := isLoggedIn(w, r)
-		if !ok {
+		if !ok && path != "/login" && path != "/register" {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
@@ -60,6 +57,17 @@ func Init() {
 		}
 
 		switch path {
+		case "/login":
+			loginPage(w, r)
+
+		case "/register":
+			registerPage(w, r)
+
+		case "/getPage/", "/getpage/":
+			http.StripPrefix("/getPage/", http.FileServer(http.Dir("front/pages"))).ServeHTTP(w, r)
+
+		case "/getFile/", "/getfile/":
+			http.StripPrefix("/getFile/", http.FileServer(http.Dir("back/saved"))).ServeHTTP(w, r)
 
 		case "/chats":
 			chatsPage(w, r, data)
@@ -94,12 +102,6 @@ func Init() {
 			http.Redirect(w, r, "/main", http.StatusSeeOther)
 		}
 	})
-
-	http.Handle("/getPage/", http.StripPrefix("/getPage/", http.FileServer(http.Dir("front/pages"))))
-	http.Handle("/getpage/", http.StripPrefix("/getpage/", http.FileServer(http.Dir("front/pages"))))
-
-	http.Handle("/getFile/", http.StripPrefix("/getFile/", http.FileServer(http.Dir("back/saved"))))
-	http.Handle("/getfile/", http.StripPrefix("/getfile/", http.FileServer(http.Dir("back/saved"))))
 }
 
 func isLoggedIn(w http.ResponseWriter, r *http.Request) (bool, string) {

@@ -15,32 +15,73 @@ import (
 	"github.com/streadway/amqp"
 )
 
-func SendMessage(chatID string, message string) chan int {
-	// TODO
-	progress := make(chan int)
+func SendMessage(username, password, chatID string, message types.Message) chan int {
+	log.Printf("[SERVER][RABBIT] Sending a message: from %s:%s '%s' to %s", username, password, message, chatID)
+	chProgress := make(chan int, 5)
 
-	percentage := 1000
-	go func() {
-		defer close(progress)
+	go sendingWorker(chProgress, username, password, chatID, message)
 
-		for {
-			time.Sleep(time.Second * 1)
+	return chProgress
+}
 
-			if percentage == 1100 {
-				percentage = 2000
-			} else if percentage == 2100 {
-				percentage = 0
-			}
+func sendingWorker(chProgress chan int, username, password, chatID string, message types.Message) {
+	conn, err := connectToRabbit(username, password)
+	if err != nil {
+		chProgress <- -1
+		close(chProgress)
+		return
+	}
+	defer conn.Close()
 
-			progress <- percentage
-			if percentage == 0 {
-				return
-			}
-			percentage += 5
-		}
-	}()
+	chProgress <- 2025
 
-	return progress
+	ch, err := conn.Channel()
+	if err != nil {
+		chProgress <- -1
+		close(chProgress)
+		return
+	}
+	defer ch.Close()
+
+	chProgress <- 2050
+
+	channelId := fmt.Sprintf("%s-%s", username, chatID)
+
+	marshalled, err := json.Marshal(message)
+	if err != nil {
+		chProgress <- -1
+		close(chProgress)
+		return
+	}
+
+	chProgress <- 2075
+
+	err = ch.Publish(
+		channelId,
+		channelId,
+		false,
+		false,
+		amqp.Publishing{
+			Headers: amqp.Table{
+				"requestId": "",
+				"username":  username,
+				"password":  password,
+			},
+			ContentType: "text/plain",
+			Body:        marshalled,
+		})
+
+	if err != nil {
+		chProgress <- -1
+		close(chProgress)
+		return
+	}
+
+	chProgress <- 2100
+	chProgress <- 0
+	close(chProgress)
+
+	log.Printf("Sent a message: from %s:%s '%s' to %s", username, password, marshalled, chatID)
 }
 
 func GetChatMessages(username, password, chatID string) ([]types.Message, error) {
@@ -288,6 +329,7 @@ func makeRequest(username, password, request, requestId string) (string, error) 
 			respCh <- nil
 		case msg := <-resp:
 			respCh <- &msg
+			log.Printf("Resp got: %s", msg.Body)
 		}
 	}()
 
@@ -373,6 +415,7 @@ func makeSeveralRequests(username, password, request string) ([][]byte, error) {
 			case msg := <-resp:
 				respCh <- &msg
 				timer.Reset(10 * time.Second)
+				log.Printf("Resp got: %s", msg.Body)
 			}
 		}
 	}()
