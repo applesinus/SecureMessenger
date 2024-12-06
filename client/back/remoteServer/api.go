@@ -17,7 +17,7 @@ import (
 
 func SendMessage(username, password, chatID string, message types.Message) chan int {
 	log.Printf("[SERVER][RABBIT] Sending a message: from %s:%s '%s' to %s", username, password, message, chatID)
-	chProgress := make(chan int, 5)
+	chProgress := make(chan int, 10)
 
 	go sendingWorker(chProgress, username, password, chatID, message)
 
@@ -45,8 +45,6 @@ func sendingWorker(chProgress chan int, username, password, chatID string, messa
 
 	chProgress <- 2050
 
-	channelId := fmt.Sprintf("%s-%s", username, chatID)
-
 	marshalled, err := json.Marshal(message)
 	if err != nil {
 		chProgress <- -1
@@ -56,9 +54,22 @@ func sendingWorker(chProgress chan int, username, password, chatID string, messa
 
 	chProgress <- 2075
 
+	parts := strings.Split(chatID, "-")
+	if len(parts) != 2 {
+		chProgress <- -1
+		close(chProgress)
+		return
+	}
+
+	reciever := parts[0]
+	queueId := parts[1]
+	exchangeName := fmt.Sprintf("%s-%s", reciever, username)
+
+	queueName := fmt.Sprintf("%s-%s", exchangeName, queueId)
+
 	err = ch.Publish(
-		channelId,
-		channelId,
+		exchangeName,
+		queueName,
 		false,
 		false,
 		amqp.Publishing{
@@ -72,9 +83,31 @@ func sendingWorker(chProgress chan int, username, password, chatID string, messa
 		})
 
 	if err != nil {
-		chProgress <- -1
-		close(chProgress)
-		return
+		chProgress <- 2080
+
+		exchangeName = fmt.Sprintf("%s-%s", username, reciever)
+		queueName = fmt.Sprintf("%s-%s", exchangeName, queueId)
+
+		err = ch.Publish(
+			exchangeName,
+			queueName,
+			false,
+			false,
+			amqp.Publishing{
+				Headers: amqp.Table{
+					"requestId": "",
+					"username":  username,
+					"password":  password,
+				},
+				ContentType: "text/plain",
+				Body:        marshalled,
+			})
+
+		if err != nil {
+			chProgress <- -1
+			close(chProgress)
+			return
+		}
 	}
 
 	chProgress <- 2100
@@ -85,24 +118,81 @@ func sendingWorker(chProgress chan int, username, password, chatID string, messa
 }
 
 func GetChatMessages(username, password, chatID string) ([]types.Message, error) {
-	resp, err := makeSeveralRequests(username, password, fmt.Sprintf("getChatMessages_%s", chatID))
+	conn, err := connectToRabbit(username, password)
 	if err != nil {
 		return nil, err
 	}
 
-	messages := make([]types.Message, 0)
+	ch, err := conn.Channel()
+	if err != nil {
+		return nil, err
+	}
 
-	for _, msg := range resp {
-		message := types.Message{}
-		err = json.Unmarshal(msg, &message)
+	parts := strings.Split(chatID, "-")
+	if len(parts) != 2 {
+		log.Println("Invalid chatID:", chatID)
+		return nil, err
+	}
+
+	reciever := parts[0]
+	queueId := parts[1]
+
+	exchangeName := fmt.Sprintf("%s-%s", reciever, username)
+	queueName := fmt.Sprintf("%s-%s", exchangeName, queueId)
+	log.Printf("[SERVER][RABBIT!!!] Getting messages from exchange: %s, queue: %s", exchangeName, queueName)
+
+	resp, err := ch.Consume(
+		queueName,
+		"",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		exchangeName = fmt.Sprintf("%s-%s", username, reciever)
+		queueName = fmt.Sprintf("%s-%s", exchangeName, queueId)
+
+		log.Printf("[SERVER][RABBIT] Getting messages from exchange: %s, queue: %s", exchangeName, queueName)
+
+		resp, err = ch.Consume(
+			queueName,
+			"",
+			true,
+			false,
+			false,
+			false,
+			nil,
+		)
 		if err != nil {
 			return nil, err
 		}
-
-		messages = append(messages, message)
 	}
 
-	return messages, nil
+	log.Printf("[SERVER][RABBIT] Getting messages from exchange: %s, queue: %s", exchangeName, queueName)
+
+	messages := make([]types.Message, 0)
+
+	timer := time.NewTimer(3 * time.Second)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-timer.C:
+			return messages, nil
+
+		case msg := <-resp:
+			message := types.Message{}
+			err = json.Unmarshal(msg.Body, &message)
+			if err != nil {
+				return nil, err
+			}
+			timer.Reset(1 * time.Second)
+
+			messages = append(messages, message)
+		}
+	}
 }
 
 func SendFile(chatID string, file *os.File) chan int {
@@ -140,16 +230,13 @@ func CreateChat(user, password string, recipient string) (string, error) {
 		return "", err
 	}
 
-	if !strings.Contains(resp, "ok_") {
+	if !strings.HasPrefix(resp, "ok_") {
 		return "", fmt.Errorf("failed to create chat: %s", resp)
 	}
 
-	parts := strings.Split(resp, "_")
-	if len(parts) != 2 {
-		return "", fmt.Errorf("failed to create chat: %s", resp)
-	}
+	chatId := strings.Replace(strings.TrimPrefix(resp, "ok_"), fmt.Sprintf("%s-", user), "", 1)
 
-	return parts[1], nil
+	return chatId, nil
 }
 
 func CreateSecretChat(sender string, recipient string, cipherType string) error {
@@ -288,11 +375,9 @@ func makeRequest(username, password, request, requestId string) (string, error) 
 		return "", fmt.Errorf("failed to publish a message: %v", err)
 	}
 
-	responseChannel := ""
-	if username == "guest" {
-		responseChannel = fmt.Sprintf("response:%s:%s", username, requestId)
-	} else {
-		responseChannel = fmt.Sprintf("response:%s", username)
+	responseChannel := fmt.Sprintf("%s-%s-response", username, requestId)
+	if requestId == "" {
+		responseChannel = fmt.Sprintf("%s-response", username)
 	}
 
 	log.Printf("[SERVER][RABBIT] Waiting for a response: %s", responseChannel)
@@ -375,7 +460,7 @@ func makeSeveralRequests(username, password, request string) ([][]byte, error) {
 		return nil, fmt.Errorf("failed to publish a message: %v", err)
 	}
 
-	responseChannel := fmt.Sprintf("response:%s", username)
+	responseChannel := fmt.Sprintf("guest-response:%s", username)
 
 	log.Printf("[SERVER][RABBIT] Waiting for a response: %s", responseChannel)
 
@@ -414,7 +499,7 @@ func makeSeveralRequests(username, password, request string) ([][]byte, error) {
 
 			case msg := <-resp:
 				respCh <- &msg
-				timer.Reset(10 * time.Second)
+				timer.Reset(1 * time.Second)
 				log.Printf("Resp got: %s", msg.Body)
 			}
 		}
@@ -447,7 +532,7 @@ func ListenToRabbit(ctx context.Context, username, password string) {
 		return
 	}
 
-	channelName := fmt.Sprintf("response:%s", username)
+	channelName := fmt.Sprintf("guest-response:%s", username)
 
 	messages, err := ch.Consume(
 		channelName, // queue

@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"log"
 	"messengerClient/back/remoteServer"
 	"messengerClient/back/users"
 	"messengerClient/consts"
 	"messengerClient/types"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -33,17 +35,29 @@ func Init() {
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// TEMP
-		// clear cookies to debug
-		/*cookies := r.Cookies()
-		for _, cookie := range cookies {
-			updateCookie(w, cookie.Name, "", 1)
-		}*/
-		// TEMP END
-
 		path := r.URL.Path
 		if path[len(path)-1] == '/' {
 			path = path[:len(path)-1]
+		}
+
+		log.Println("Request: " + path)
+
+		if strings.Contains(path, "/getfile/") {
+			http.StripPrefix("/getfile/", http.FileServer(http.Dir("back/saved"))).ServeHTTP(w, r)
+			return
+		}
+		if strings.Contains(path, "/getFile/") {
+			http.StripPrefix("/getFile/", http.FileServer(http.Dir("back/saved"))).ServeHTTP(w, r)
+			return
+		}
+
+		if strings.Contains(path, "/getpage/") {
+			http.StripPrefix("/getpage/", http.FileServer(http.Dir("front/pages"))).ServeHTTP(w, r)
+			return
+		}
+		if strings.Contains(path, "/getPage/") {
+			http.StripPrefix("/getPage/", http.FileServer(http.Dir("front/pages"))).ServeHTTP(w, r)
+			return
 		}
 
 		ok, username := isLoggedIn(w, r)
@@ -62,12 +76,6 @@ func Init() {
 
 		case "/register":
 			registerPage(w, r)
-
-		case "/getPage/", "/getpage/":
-			http.StripPrefix("/getPage/", http.FileServer(http.Dir("front/pages"))).ServeHTTP(w, r)
-
-		case "/getFile/", "/getfile/":
-			http.StripPrefix("/getFile/", http.FileServer(http.Dir("back/saved"))).ServeHTTP(w, r)
 
 		case "/chats":
 			chatsPage(w, r, data)

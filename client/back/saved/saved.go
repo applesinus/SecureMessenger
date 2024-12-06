@@ -178,6 +178,7 @@ func GetMessages(user, password, chatId string) ([]types.Message, error) {
 	messagesOnServer, err := remoteServer.GetChatMessages(user, password, chatId)
 	if err != nil {
 		err = consts.ErrOnServer(err)
+		log.Printf("[BACKEND][GET_MESSAGES] Error getting messages from server: %s", err)
 		messagesOnServer = make([]types.Message, 0)
 	}
 

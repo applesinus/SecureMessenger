@@ -34,6 +34,8 @@ func redirectPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func loginPage(w http.ResponseWriter, r *http.Request) {
+	log.Println("Login page")
+
 	ok, _ := isLoggedIn(w, r)
 	if ok {
 		http.Redirect(w, r, "/", http.StatusSeeOther)

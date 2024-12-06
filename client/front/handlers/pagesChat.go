@@ -232,7 +232,7 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 		log.Printf("[FRONT][TEMPLATE] Error parsing template: %s", err)
 	}
 
-	chat := strings.Split(r.URL.Query().Get("id"), ":")
+	chat := strings.Split(r.URL.Query().Get("id"), "-")
 	if len(chat) != 2 {
 		log.Printf("[FRONT][TEMPLATE] Error getting chat id: %s", err)
 		http.Redirect(w, r, "/", http.StatusSeeOther)

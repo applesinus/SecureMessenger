@@ -145,6 +145,7 @@ func listenRequests(ctx context.Context, conn *amqp.Connection) {
 					respond(conn, userId, reqId, fmt.Sprintf("%v", err))
 				}
 
+				log.Printf("[REQUEST LISTENER] Still respond to %s", userId)
 				respond(conn, userId, reqId, fmt.Sprintf("ok_%s", strings.Join(chats, "_")))
 			}
 
@@ -228,21 +229,29 @@ func respond(conn *amqp.Connection, user, reqId, message string) error {
 	}
 	defer ch.Close()
 
-	responseID := fmt.Sprintf("response:%s", user)
-	if reqId != "" {
-		responseID = fmt.Sprintf("%s:%s", responseID, reqId)
+	exchangeName := api.CreateExchangeName(user, reqId)
+	queueName := api.CreateQueueName(exchangeName, "response")
+	if user != "guest" {
+		exchangeName = fmt.Sprintf("%s-%s", user, "response")
+		queueName = exchangeName
 	}
 
+	log.Printf("[SERVER][RABBIT] exchange: %s, queue: %s", exchangeName, queueName)
+
 	if user == "guest" {
-		err = api.CreateChannel(ch, responseID, responseID, responseID)
+		err = api.CreateExchange(ch, exchangeName, "guest", "")
 		if err != nil {
 			return fmt.Errorf("failed to create exchange: %v", err)
+		}
+		err = api.CreateQueue(ch, exchangeName, queueName, queueName)
+		if err != nil {
+			return fmt.Errorf("failed to create queue: %v", err)
 		}
 	}
 
 	err = ch.Publish(
-		responseID,
-		responseID,
+		exchangeName,
+		queueName,
 		false,
 		false,
 		amqp.Publishing{
@@ -254,6 +263,8 @@ func respond(conn *amqp.Connection, user, reqId, message string) error {
 		return fmt.Errorf("failed to publish a message: %v", err)
 	}
 
+	log.Printf("[SERVER][RABBIT] Sent a response to %s:%s: %s", user, reqId, message)
+
 	if user == "guest" {
 		go func() {
 			ch, err := conn.Channel()
@@ -263,15 +274,18 @@ func respond(conn *amqp.Connection, user, reqId, message string) error {
 			}
 			defer ch.Close()
 
-			time.Sleep(30 * time.Second)
-			_, err = ch.QueueDelete(responseID, false, false, false)
+			time.Sleep(time.Minute)
+
+			_, err = ch.QueueDelete(queueName, false, false, false)
 			if err != nil {
 				log.Printf("[SERVER][RABBIT] Failed to delete queue: %v", err)
 			}
-			err = ch.ExchangeDelete(responseID, false, false)
+			err = ch.ExchangeDelete(exchangeName, false, false)
 			if err != nil {
 				log.Printf("[SERVER][RABBIT] Failed to delete exchange: %v", err)
 			}
+
+			api.RevokePermissions("guest", exchangeName)
 
 			log.Println("[SERVER][RABBIT] Ended closing response")
 		}()

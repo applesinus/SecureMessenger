@@ -1,6 +1,13 @@
 {
-  "kekus": {
+  "boba": {
     "Mu": {},
-    "Chats": {}
+    "Chats": {
+      "biba:0": {
+        "id": "0",
+        "reciever": "biba",
+        "encryption": "no",
+        "messages": []
+      }
+    }
   }
 }
