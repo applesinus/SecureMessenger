@@ -3,6 +3,7 @@ package consts
 import (
 	"errors"
 	"fmt"
+	"log"
 	"messengerClient/types"
 	"strings"
 )
@@ -25,11 +26,11 @@ func AddListener(user, chatId, eventID string, listener chan int) {
 
 func RemoveListener(user, chatId, eventID string) {
 	EventListeners.Mu.Lock()
-	listener := EventListeners.Events[user][chatId][eventID]
-	if listener != nil {
-		close(listener)
-		delete(EventListeners.Events[user], eventID)
+	log.Printf("Removing listener of user %s in chat %s: '%s'", user, chatId, eventID)
+	if EventListeners.Events[user][chatId][eventID] != nil {
+		close(EventListeners.Events[user][chatId][eventID])
 	}
+	delete(EventListeners.Events[user][chatId], eventID)
 	EventListeners.Mu.Unlock()
 }
 

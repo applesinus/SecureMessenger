@@ -30,91 +30,13 @@ func RestoreChats() {
 		restoredChats = make(map[string]types.Chats)
 	}
 
-	SavedChats = make(map[string]types.Chats)
-
-	for user := range restoredChats {
-		SavedChats[user] = restoredChats[user]
-	}
+	SavedChats = restoredChats
 
 	SaveChats()
-
-	// TEMP
-	/*chats := types.Chats{
-		Mu:    new(sync.Mutex),
-		Chats: make(map[string]*types.ChatType),
-	}
-
-	msgs := make([]types.Message, 0)
-	msgs = append(msgs, []types.Message{
-		{
-			Id:      "0",
-			Author:  "kekus",
-			Message: "Hello there",
-			Type:    "text",
-		},
-		{
-			Id:      "1",
-			Author:  "General Grievous",
-			Message: "General Kenobi! You are a bold one.",
-			Type:    "text",
-		},
-		{
-			Id:      "2",
-			Author:  "General Grievous",
-			Message: "Kill him!",
-			Type:    "text",
-		},
-		{
-			Id:      "3",
-			Author:  "Battle Droids",
-			Message: "[Droids fail to kill Obi-Wan]",
-			Type:    "text",
-		},
-		{
-			Id:      "4",
-			Author:  "Battle Droids",
-			Message: "[Other droids surround him]",
-			Type:    "text",
-		},
-		{
-			Id:      "5",
-			Author:  "General Grievous",
-			Message: "Back away! I will deal with this Jedi scum myself!",
-			Type:    "text",
-		},
-		{
-			Id:      "6",
-			Author:  "kekus",
-			Message: "Your move!",
-			Type:    "text",
-		},
-		{
-			Id:      "7",
-			Author:  "kekus",
-			Message: "meme.jpeg",
-			Type:    "image",
-		},
-	}...)
-
-	chats.Chats["1"] = &types.ChatType{
-		Id:         "1",
-		Reciever:   "General Grievous",
-		Encryption: consts.EncriptionNo,
-		Messages:   msgs,
-	}
-
-	SavedChats["kekus"] = chats*/
-	// TEMP END
 }
 
 func SaveChats() {
-	backingUpChats := make(map[string]types.Chats, 0)
-
-	for user := range SavedChats {
-		backingUpChats[user] = SavedChats[user]
-	}
-
-	buff, err := json.MarshalIndent(backingUpChats, "", "  ")
+	buff, err := json.MarshalIndent(SavedChats, "", "  ")
 
 	if err != nil {
 		log.Printf("[BACKEND][CHATS SAVE] Error encoding file: %s", err)
@@ -137,13 +59,57 @@ func AddMessage(user, chatId string, message types.Message) {
 	SavedChats[user].Mu.Lock()
 	defer SavedChats[user].Mu.Unlock()
 
-	for _, chat := range SavedChats[user].Chats {
-		if chat.Id == chatId {
-			chat.Messages = append(chat.Messages, message)
+	if _, ok := SavedChats[user]; !ok {
+		log.Printf("Chats of user %s does not exist", user)
+		return
+	}
+
+	if _, ok := SavedChats[user].Chats[chatId]; !ok {
+		log.Printf("Chat %s of user %s does not exist", chatId, user)
+		return
+	}
+
+	SavedChats[user].Chats[chatId].Messages = append(SavedChats[user].Chats[chatId].Messages, message)
+
+	SaveChats()
+}
+
+func AddFile(user, chat, id string, fileContent *[]byte) {
+	SavedChats[user].Mu.Lock()
+	defer SavedChats[user].Mu.Unlock()
+
+	if _, ok := SavedChats[user]; !ok {
+		log.Printf("Chats of user %s does not exist", user)
+		return
+	}
+
+	if _, ok := SavedChats[user].Chats[chat]; !ok {
+		log.Printf("Chat %s of user %s does not exist", chat, user)
+		return
+	}
+
+	timeOfMessage, err := time.Parse(time.StampNano, id)
+	if err != nil {
+		return
+	}
+
+	for idx, message := range SavedChats[user].Chats[chat].Messages {
+		if message.Id == id {
+			SavedChats[user].Chats[chat].Messages[idx].Message = *fileContent
+			return
+		}
+		timeInChat, err := time.Parse(time.StampNano, message.Id)
+		if err != nil {
+			continue
+		}
+
+		if timeInChat.After(timeOfMessage) {
+			log.Println("message not found")
+			return
 		}
 	}
 
-	SaveChats()
+	log.Println("message not found")
 }
 
 // chatype can be "regular" or "secret" (or empty for all)
@@ -172,10 +138,10 @@ func GetChatsNames(user string, chatype ...string) [][]string {
 	return chatNames
 }
 
-func GetMessages(user, password, chatId string) ([]types.Message, error) {
+func GetMessages(user, password, reciever, chatId string) ([]types.Message, error) {
 	var err error
 
-	messagesOnServer, err := remoteServer.GetChatMessages(user, password, chatId)
+	messagesOnServer, err := remoteServer.GetChatMessages(user, password, reciever, chatId)
 	if err != nil {
 		err = consts.ErrOnServer(err)
 		log.Printf("[BACKEND][GET_MESSAGES] Error getting messages from server: %s", err)
@@ -194,14 +160,14 @@ func GetMessages(user, password, chatId string) ([]types.Message, error) {
 		}
 	}
 
-	chatOnDisk, ok := SavedChats[user].Chats[chatId]
+	chatOnDisk, ok := SavedChats[user].Chats[fmt.Sprintf("%s-%s", reciever, chatId)]
 	if !ok {
 		if err != nil {
 			return nil, consts.ErrNoChat
 		} else {
-			SavedChats[user].Chats[chatId] = &types.ChatType{
+			SavedChats[user].Chats[fmt.Sprintf("%s-%s", reciever, chatId)] = &types.ChatType{
 				Id:         chatId,
-				Reciever:   messagesOnServer[0].Author,
+				Reciever:   reciever,
 				Encryption: consts.EncriptionNo,
 				Messages:   messagesOnServer,
 			}
@@ -214,16 +180,12 @@ func GetMessages(user, password, chatId string) ([]types.Message, error) {
 	for _, message := range chatOnDisk.Messages {
 		after := -1
 		for i, msg := range messagesInChat {
-			if message.Id == msg.Id {
-				break
-			}
-
-			timeInChat, err := time.Parse(time.RFC3339, msg.Id)
+			timeInChat, err := time.Parse(time.StampNano, msg.Id)
 			if err != nil {
 				continue
 			}
 
-			timeOnServer, err := time.Parse(time.RFC3339, message.Id)
+			timeOnServer, err := time.Parse(time.StampNano, message.Id)
 			if err != nil {
 				continue
 			}
@@ -234,13 +196,51 @@ func GetMessages(user, password, chatId string) ([]types.Message, error) {
 		}
 
 		if after < len(messagesInChat)-1 {
-			messagesInChat = append(messagesInChat[:after], append(messagesInChat[after+1:], message)...)
+			messagesInChat = append(messagesInChat[:after+1], append([]types.Message{message}, messagesInChat[after+1:]...)...)
 		} else {
 			messagesInChat = append(messagesInChat, message)
 		}
 	}
 
+	SavedChats[user].Mu.Lock()
+	SavedChats[user].Chats[fmt.Sprintf("%s-%s", reciever, chatId)].Messages = messagesInChat
+	SaveChats()
+	defer SavedChats[user].Mu.Unlock()
+
 	return messagesInChat, nil
+}
+
+func GetMessage(user, chat, id string) (types.Message, error) {
+	_, ok := SavedChats[user]
+	if !ok {
+		return types.Message{}, consts.ErrNoChat
+	}
+
+	_, ok = SavedChats[user].Chats[chat]
+	if !ok {
+		return types.Message{}, consts.ErrNoChat
+	}
+
+	timeOfMessage, err := time.Parse(time.StampNano, id)
+	if err != nil {
+		return types.Message{}, err
+	}
+
+	for _, message := range SavedChats[user].Chats[chat].Messages {
+		if message.Id == id {
+			return message, nil
+		}
+		timeInChat, err := time.Parse(time.StampNano, message.Id)
+		if err != nil {
+			continue
+		}
+
+		if timeInChat.After(timeOfMessage) {
+			return types.Message{}, fmt.Errorf("message not found")
+		}
+	}
+
+	return types.Message{}, fmt.Errorf("message not found")
 }
 
 func NewChat(user, password, reciever, encryption string) (string, error) {
@@ -285,11 +285,11 @@ func NewChat(user, password, reciever, encryption string) (string, error) {
 		return "", fmt.Errorf("chat with id %s already exists on local device but not on server, please contact admin", id)
 	}
 
-	SavedChats[user].Chats[fmt.Sprintf("%s:%s", reciever, id)] = &newChat
+	SavedChats[user].Chats[fmt.Sprintf("%s-%s", reciever, id)] = &newChat
 
 	SaveChats()
 
-	return id, nil
+	return fmt.Sprintf("%s-%s", reciever, id), nil
 }
 
 func ClearChats(user string) {

@@ -101,6 +101,9 @@ func Init() {
 		case "/chat/update":
 			updateChatsPage(w, r, data)
 
+		case "/chat/file":
+			filePage(w, r, data)
+
 		case "/chat/recieve":
 			recieveChatPage(w, r, data)
 

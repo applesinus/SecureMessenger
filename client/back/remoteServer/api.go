@@ -4,27 +4,35 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"messengerClient/back/crypto"
 	"messengerClient/types"
-	"os"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/streadway/amqp"
 )
 
-func SendMessage(username, password, chatID string, message types.Message) chan int {
-	log.Printf("[SERVER][RABBIT] Sending a message: from %s:%s '%s' to %s", username, password, message, chatID)
-	chProgress := make(chan int, 10)
+func sendProgress(ch chan int, progress int) {
+	select {
+	case ch <- progress:
+	default:
+	}
+}
 
-	go sendingWorker(chProgress, username, password, chatID, message)
+func SendMessage(username, password, reciever, chatID string, message types.Message) chan int {
+	log.Printf("[SERVER][RABBIT] Sending a message: from %s:%s '%s' to %s-%s", username, password, message, reciever, chatID)
+	chProgress := make(chan int)
+
+	go sendingWorker(chProgress, username, password, reciever, chatID, message)
 
 	return chProgress
 }
 
-func sendingWorker(chProgress chan int, username, password, chatID string, message types.Message) {
+func sendingWorker(chProgress chan int, username, password, reciever, chatID string, message types.Message) {
 	conn, err := connectToRabbit(username, password)
 	if err != nil {
 		chProgress <- -1
@@ -33,7 +41,7 @@ func sendingWorker(chProgress chan int, username, password, chatID string, messa
 	}
 	defer conn.Close()
 
-	chProgress <- 2025
+	sendProgress(chProgress, 2010)
 
 	ch, err := conn.Channel()
 	if err != nil {
@@ -43,7 +51,7 @@ func sendingWorker(chProgress chan int, username, password, chatID string, messa
 	}
 	defer ch.Close()
 
-	chProgress <- 2050
+	sendProgress(chProgress, 2020)
 
 	marshalled, err := json.Marshal(message)
 	if err != nil {
@@ -52,97 +60,146 @@ func sendingWorker(chProgress chan int, username, password, chatID string, messa
 		return
 	}
 
-	chProgress <- 2075
+	sendProgress(chProgress, 2030)
 
-	parts := strings.Split(chatID, "-")
-	if len(parts) != 2 {
+	chatName := fmt.Sprintf("%s-%s-%s", username, reciever, chatID)
+
+	_, err = ch.QueueInspect(chatName)
+	if err != nil {
 		chProgress <- -1
 		close(chProgress)
 		return
 	}
 
-	reciever := parts[0]
-	queueId := parts[1]
-	exchangeName := fmt.Sprintf("%s-%s", reciever, username)
+	q, _ := ch.QueueInspect(chatName)
+	log.Printf("Queue %s has %d messages and %d consumers", q.Name, q.Messages, q.Consumers)
 
-	queueName := fmt.Sprintf("%s-%s", exchangeName, queueId)
+	sendProgress(chProgress, 2040)
+
+	if err := ch.Confirm(false); err != nil {
+		log.Fatalf("Failed to enable confirm mode: %v", err)
+	}
 
 	err = ch.Publish(
-		exchangeName,
-		queueName,
-		false,
+		chatName,
+		chatName,
+		true,
 		false,
 		amqp.Publishing{
 			Headers: amqp.Table{
 				"requestId": "",
 				"username":  username,
-				"password":  password,
 			},
-			ContentType: "text/plain",
-			Body:        marshalled,
+			ContentType:  "text/plain",
+			Body:         marshalled,
+			DeliveryMode: amqp.Persistent,
 		})
 
 	if err != nil {
-		chProgress <- 2080
-
-		exchangeName = fmt.Sprintf("%s-%s", username, reciever)
-		queueName = fmt.Sprintf("%s-%s", exchangeName, queueId)
-
-		err = ch.Publish(
-			exchangeName,
-			queueName,
-			false,
-			false,
-			amqp.Publishing{
-				Headers: amqp.Table{
-					"requestId": "",
-					"username":  username,
-					"password":  password,
-				},
-				ContentType: "text/plain",
-				Body:        marshalled,
-			})
-
-		if err != nil {
-			chProgress <- -1
-			close(chProgress)
-			return
-		}
+		chProgress <- -1
+		close(chProgress)
+		return
 	}
 
-	chProgress <- 2100
-	chProgress <- 0
-	close(chProgress)
+	sendProgress(chProgress, 2090)
 
-	log.Printf("Sent a message: from %s:%s '%s' to %s", username, password, marshalled, chatID)
+	confirmChan := ch.NotifyPublish(make(chan amqp.Confirmation, 1))
+
+	resp := <-confirmChan
+	if !resp.Ack {
+		chProgress <- -1
+		close(chProgress)
+		return
+	}
+
+	sendProgress(chProgress, 2100)
+	chProgress <- 0
 }
 
-func GetChatMessages(username, password, chatID string) ([]types.Message, error) {
+func SendFile(username, password, reciever, chatID string, message types.Message, r *http.Request) (chan int, chan *[]byte) {
+	log.Printf("[SERVER][RABBIT] Sending a message: from %s:%s '%s' to %s-%s", username, password, message, reciever, chatID)
+	chProgress := make(chan int)
+	chContent := make(chan *[]byte)
+
+	go fileUploadWorker(chProgress, chContent, username, password, reciever, chatID, message, r)
+
+	return chProgress, chContent
+}
+
+func fileUploadWorker(chProgress chan int, chContent chan *[]byte, username, password, reciever, chatID string, message types.Message, r *http.Request) {
+	// Max upload size is 50MB
+	err := r.ParseMultipartForm(50 << 20)
+	if err != nil {
+		chProgress <- -1
+		return
+	}
+
+	file, handler, err := r.FormFile("file")
+	if err != nil {
+		chProgress <- -1
+		return
+	}
+	defer file.Close()
+
+	fileBytes, err := readFileWithProgressChan(file, handler.Size, chProgress)
+	if err != nil {
+		chProgress <- -1
+		return
+	}
+
+	message.Message = fileBytes
+	go func() { chContent <- &fileBytes }()
+
+	sendProgress(chProgress, 2000)
+
+	sendingWorker(chProgress, username, password, reciever, chatID, message)
+}
+
+func readFileWithProgressChan(r io.Reader, totalSize int64, progressChan chan int) ([]byte, error) {
+	progressReader := &progressReader{
+		reader:       r,
+		totalSize:    totalSize,
+		progressChan: progressChan,
+	}
+
+	return io.ReadAll(progressReader)
+}
+
+type progressReader struct {
+	reader       io.Reader
+	totalSize    int64
+	currentPos   int64
+	progressChan chan int
+}
+
+func (pr *progressReader) Read(p []byte) (n int, err error) {
+	n, err = pr.reader.Read(p)
+	pr.currentPos += int64(n)
+
+	percentage := 3000 + int(100*float64(pr.currentPos)/float64(pr.totalSize))
+
+	sendProgress(pr.progressChan, percentage)
+
+	return n, err
+}
+
+func GetChatMessages(username, password, reciever, chatID string) ([]types.Message, error) {
 	conn, err := connectToRabbit(username, password)
 	if err != nil {
 		return nil, err
 	}
+	defer conn.Close()
 
 	ch, err := conn.Channel()
 	if err != nil {
 		return nil, err
 	}
+	defer ch.Close()
 
-	parts := strings.Split(chatID, "-")
-	if len(parts) != 2 {
-		log.Println("Invalid chatID:", chatID)
-		return nil, err
-	}
-
-	reciever := parts[0]
-	queueId := parts[1]
-
-	exchangeName := fmt.Sprintf("%s-%s", reciever, username)
-	queueName := fmt.Sprintf("%s-%s", exchangeName, queueId)
-	log.Printf("[SERVER][RABBIT!!!] Getting messages from exchange: %s, queue: %s", exchangeName, queueName)
+	chatName := fmt.Sprintf("%s-%s-%s", reciever, username, chatID)
 
 	resp, err := ch.Consume(
-		queueName,
+		chatName,
 		"",
 		true,
 		false,
@@ -151,28 +208,13 @@ func GetChatMessages(username, password, chatID string) ([]types.Message, error)
 		nil,
 	)
 	if err != nil {
-		exchangeName = fmt.Sprintf("%s-%s", username, reciever)
-		queueName = fmt.Sprintf("%s-%s", exchangeName, queueId)
-
-		log.Printf("[SERVER][RABBIT] Getting messages from exchange: %s, queue: %s", exchangeName, queueName)
-
-		resp, err = ch.Consume(
-			queueName,
-			"",
-			true,
-			false,
-			false,
-			false,
-			nil,
-		)
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 
-	log.Printf("[SERVER][RABBIT] Getting messages from exchange: %s, queue: %s", exchangeName, queueName)
+	log.Printf("[SERVER][RABBIT] Getting messages from exchange: %s", chatName)
 
 	messages := make([]types.Message, 0)
+	defer log.Println("Consumed messages:", len(messages))
 
 	timer := time.NewTimer(3 * time.Second)
 	defer timer.Stop()
@@ -195,37 +237,8 @@ func GetChatMessages(username, password, chatID string) ([]types.Message, error)
 	}
 }
 
-func SendFile(chatID string, file *os.File) chan int {
-	// TODO
-	progress := make(chan int)
-
-	percentage := 1000
-	go func() {
-		defer close(progress)
-
-		for {
-			time.Sleep(time.Second * 1)
-
-			if percentage == 1100 {
-				percentage = 2000
-			} else if percentage == 2100 {
-				percentage = 0
-			}
-
-			progress <- percentage
-			percentage += 5
-
-			if percentage == 0 {
-				return
-			}
-		}
-	}()
-
-	return progress
-}
-
-func CreateChat(user, password string, recipient string) (string, error) {
-	resp, err := makeRequest(user, password, fmt.Sprintf("createRegularChat_%s", recipient), "")
+func CreateChat(user, password string, reciever string) (string, error) {
+	resp, err := makeRequest(user, password, fmt.Sprintf("createRegularChat_%s", reciever), "")
 	if err != nil {
 		return "", err
 	}
@@ -239,7 +252,7 @@ func CreateChat(user, password string, recipient string) (string, error) {
 	return chatId, nil
 }
 
-func CreateSecretChat(sender string, recipient string, cipherType string) error {
+func CreateSecretChat(sender string, reciever string, cipherType string) error {
 	// TODO
 	return nil
 }
@@ -375,7 +388,7 @@ func makeRequest(username, password, request, requestId string) (string, error) 
 		return "", fmt.Errorf("failed to publish a message: %v", err)
 	}
 
-	responseChannel := fmt.Sprintf("%s-%s-response", username, requestId)
+	responseChannel := fmt.Sprintf("%s-response-%s", username, requestId)
 	if requestId == "" {
 		responseChannel = fmt.Sprintf("%s-response", username)
 	}
@@ -424,99 +437,6 @@ func makeRequest(username, password, request, requestId string) (string, error) 
 	}
 
 	return string(response.Body), nil
-}
-
-func makeSeveralRequests(username, password, request string) ([][]byte, error) {
-	conn, err := connectToRabbit(username, password)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %v", err)
-	}
-	defer conn.Close()
-
-	ch, err := conn.Channel()
-	if err != nil {
-		return nil, fmt.Errorf("failed to open a channel: %v", err)
-	}
-	defer ch.Close()
-
-	log.Printf("[SERVER][RABBIT] Sending a request: %s from %s:%s", request, username, password)
-
-	err = ch.Publish(
-		"request",
-		"request",
-		false,
-		false,
-		amqp.Publishing{
-			Headers: amqp.Table{
-				"requestId": "",
-				"username":  username,
-				"password":  password,
-			},
-			ContentType: "text/plain",
-			Body:        []byte(request),
-		})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to publish a message: %v", err)
-	}
-
-	responseChannel := fmt.Sprintf("guest-response:%s", username)
-
-	log.Printf("[SERVER][RABBIT] Waiting for a response: %s", responseChannel)
-
-	ch.Close()
-
-	ch, err = conn.Channel()
-	if err != nil {
-		return nil, fmt.Errorf("failed to open a consuming channel: %v", err)
-	}
-	defer ch.Close()
-	resp, err := ch.Consume(
-		responseChannel,
-		"",
-		true,
-		false,
-		false,
-		false,
-		nil,
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to consume a queue: %v", err)
-	}
-
-	respCh := make(chan *amqp.Delivery)
-	log.Printf("[SERVER][RABBIT] Waiting for a response...")
-	timer := time.NewTimer(10 * time.Second)
-	defer timer.Stop()
-
-	go func() {
-		for {
-			select {
-			case <-timer.C:
-				respCh <- nil
-				return
-
-			case msg := <-resp:
-				respCh <- &msg
-				timer.Reset(1 * time.Second)
-				log.Printf("Resp got: %s", msg.Body)
-			}
-		}
-	}()
-
-	responses := make([][]byte, 0)
-	for {
-		select {
-		case <-timer.C:
-			return responses, nil
-		case response := <-respCh:
-			if response == nil {
-				return responses, nil
-			}
-			responses = append(responses, response.Body)
-		}
-	}
 }
 
 func ListenToRabbit(ctx context.Context, username, password string) {

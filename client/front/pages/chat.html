@@ -77,7 +77,7 @@
         }
         .scroll-box {
             padding: 10px;
-            max-height: 450px;
+            max-height: 400px;
             width: 700px;
             overflow-y: scroll;
             margin-top: 10px;
@@ -98,6 +98,12 @@
         .scroll-box table p {
             margin: 0;
         }
+
+        .disabled {
+        pointer-events: none;
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
 
     </style>
 {{end}}
@@ -127,18 +133,32 @@
                                     <b style="color: #e86701;">{{if eq $message.Author $.User}}You:{{else}}{{$message.Author}}{{end}} </b>
 
                                     {{if eq $message.Type "text"}}
-                                        {{$message.Message}}
-                                    {{else if eq $message.Type "file"}}
-                                        <a href="/getFile/{{$message.Message}}" target="_blank" rel="noopener noreferrer">{{$message.Message}}</a>
-                                    {{else if eq $message.Type "image"}}
-                                        <img src="/getFile/{{$message.Message}}" style="max-width: 400px; max-height: 200px;" alt="Attached image {{$message.Message}}">
+                                        {{printf "%s" $message.Message}}
+                                    {{else if eq (slice $message.Type 0 5) "file/"}}
+                                        <a id="fileLink_{{$message.Id}}"
+                                            {{range $i, $listener := $.Listeners}}
+                                                {{if eq $message.Id $listener}}
+                                                    class="disabled"
+                                                {{end}}
+                                            {{end}}
+                                        href="/chat/file?chat={{$.Name}}-{{$.Message}}&id={{$message.Id}}"
+                                        target="_blank" rel="noopener noreferrer"
+                                        >
+                                            Download attached file {{slice $message.Type 5}}
+                                        </a>
+                                    {{else if eq (slice $message.Type 0 6) "image/"}}
+                                        <img
+                                        src="/chat/file?chat={{$.Name}}-{{$.Message}}&id={{$message.Id}}"
+                                        style="max-width: 400px; max-height: 200px;"
+                                        alt="Attached image {{slice $message.Type 6}}"
+                                        >
                                     {{else}}
-                                        <span style="color: red;">Unsupported message type</style>
+                                        <span style="color: red; font-weight: bold;">Unsupported message type</style>
                                     {{end}}
                                 </p>
                                     
                                 {{range $i, $listener := $.Listeners}}
-                                    {{if eq (printf "%v:%$v.%v" $.Name $.Message $message.Id) $listener}}
+                                    {{if eq $message.Id $listener}}
                                         <p style="font-size: 10px; margin: 0; color: grey;"><span id="progressBar_{{$listener}}">Ok</span></p>
                                     {{end}}
                                 {{end}}
@@ -163,9 +183,10 @@
         <form id="sendFile" method="post" enctype="multipart/form-data">
             <input type="hidden" name="formID" value="sendFile">
             <p>
-                <input type="file" id="file" name="file" style="width: 66%;">
+                <input type="file" id="file" name="file" style="width: 66%;" max-size="52428800">
                 <button type="submit">Send File</button>
             </p>
+            <p>Max file size is 50 MB</p>
         </form>
 
         <p>
@@ -179,6 +200,11 @@
     function scrollDown() {
         const box = document.getElementById('scroll-box');
         box.scrollTop = box.scrollHeight;
+    }
+
+    function enable(id) {
+        doc = document.getElementById("fileLink_" + id);
+        if (doc) doc.classList.remove("disabled");
     }
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -196,25 +222,30 @@
 
     {{range $i, $listener := .Listeners}}
         {
-            eventSource = new EventSource("/chat/update?name={{$listener}}&chat={{$.Name}}:{{$.Message}}");
+            eventSource = new EventSource("/chat/update?name={{$listener}}&chat={{$.Name}}-{{$.Message}}");
 
             eventSource.onmessage = function(event) {
                 message = ""
+                fileLink = ""
 
                 if (event.data === "-1") {
                     message = "Internal error";
                 } else if (event.data === "0") {
                     message = "Ok";
+                    enable("{{$listener}}");
                 } else if (event.data === "1100") {
                     message = "Encrypted";
                 } else if (event.data.startsWith("1")) {
                     message = "Encrypting progress: " + event.data.substring(2) + "%";
                 } else if (event.data.startsWith("2100")) {
                     message = "Sent";
+                    enable("{{$listener}}");
                 } else if (event.data.startsWith("2")) {
                     message = "Sending progress: " + event.data.substring(2) + "%";
+                    enable("{{$listener}}");
                 } else if (event.data.startsWith("3100")) {
                     message = "Uploaded";
+                    enable("{{$listener}}");
                 } else if (event.data.startsWith("3")) {
                     message = "Uploading progress: " + event.data.substring(2) + "%";
                 }

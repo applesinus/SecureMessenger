@@ -4,7 +4,7 @@ import "sync"
 
 type Message struct {
 	Id      string `json:"id"`
-	Message string `json:"message"`
+	Message []byte `json:"message"`
 
 	Type   string `json:"type"`
 	Author string `json:"author"`

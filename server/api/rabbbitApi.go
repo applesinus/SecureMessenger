@@ -45,14 +45,14 @@ func CreateUser(ch *amqp.Channel, name, password string) error {
 
 	// Create response channel & set permissions
 	if name != "guest" {
-		responseExchange := CreateExchangeName(name, "response")
+		responseExchange := fmt.Sprintf("%s-response", name)
 
-		err = CreateExchange(ch, responseExchange, name, "")
+		err = CreateExchange(ch, responseExchange, "", name)
 		if err != nil {
 			return fmt.Errorf("[USER REGISTER] failed to create response exchange: %w", err)
 		}
 
-		err = CreateQueue(ch, responseExchange, responseExchange, responseExchange)
+		err = CreateQueue(ch, responseExchange)
 		if err != nil {
 			return fmt.Errorf("[USER REGISTER] failed to create response channel: %w", err)
 		}
@@ -185,11 +185,11 @@ func RevokePermissions(user, exchange string) error {
 	return setPermissions(user, exchange, false, false)
 }
 
-func CreateQueue(ch *amqp.Channel, exchange, queue, routingKey string) error {
-	log.Printf("[QUEUE] Creating queue: '%s'", queue)
+func CreateQueue(ch *amqp.Channel, name string) error {
+	log.Printf("[QUEUE] Creating queue: '%s'", name)
 
 	_, err := ch.QueueDeclare(
-		queue,
+		name,
 		true,
 		false,
 		false,
@@ -201,23 +201,23 @@ func CreateQueue(ch *amqp.Channel, exchange, queue, routingKey string) error {
 	}
 
 	if err := ch.QueueBind(
-		queue,
-		routingKey,
-		exchange,
+		name,
+		name,
+		name,
 		false,
 		nil,
 	); err != nil {
 		return fmt.Errorf("failed to bind queue: %w", err)
 	}
 
-	if strings.Contains(exchange, "guest") {
-		setPermissions("guest", exchange, false, true)
+	if strings.Contains(name, "guest") {
+		setPermissions("guest", name, false, true)
 	}
 
 	return nil
 }
 
-func CreateExchange(ch *amqp.Channel, exchangeName, user1, user2 string) error {
+func CreateExchange(ch *amqp.Channel, exchangeName, writer, reader string) error {
 	err := ch.ExchangeDeclare(
 		exchangeName,
 		"direct",
@@ -231,23 +231,30 @@ func CreateExchange(ch *amqp.Channel, exchangeName, user1, user2 string) error {
 		return fmt.Errorf("failed to declare exchange: %w", err)
 	}
 
-	err = setPermissions(user1, exchangeName, true, true)
-	if err != nil {
-		return fmt.Errorf("[CHAT CREATOR] Error adding permission for user %s: %s", user1, err)
+	if reader == "" {
+		return fmt.Errorf("[CHAT CREATOR] Reader cannot be empty")
 	}
 
-	if user2 == "" {
-		return nil
+	if writer != "" {
+		err = setPermissions(writer, exchangeName, true, false)
+		if err != nil {
+			return fmt.Errorf("[CHAT CREATOR] Error adding write permission for user %s: %s", writer, err)
+		}
 	}
-	err = setPermissions(user2, exchangeName, true, true)
+
+	err = setPermissions(reader, exchangeName, false, true)
 	if err != nil {
-		return fmt.Errorf("[CHAT CREATOR] Error adding permission for user %s: %s", user2, err)
+		return fmt.Errorf("[CHAT CREATOR] Error adding read permission for user %s: %s", reader, err)
 	}
 
 	return nil
 }
 
 func StartChat(ch *amqp.Channel, user1, user2 string, secret bool) (string, error) {
+	if user1 == user2 {
+		return "", fmt.Errorf("[CHAT CREATOR] You cannot start a chat with yourself")
+	}
+
 	if ok, err := UserExists(user1); !ok {
 		if err != nil {
 			return "", fmt.Errorf("[CHAT CREATOR] %s", err)
@@ -263,62 +270,49 @@ func StartChat(ch *amqp.Channel, user1, user2 string, secret bool) (string, erro
 		}
 	}
 
-	exchanges, err := getAllExchanges()
+	chats, err := getAllExchanges()
 	if err != nil {
 		return "", err
 	}
 
-	exchangeName := ""
-	channelId := -1
+	chatName := ""
+	chatId := -1
 
-	e12 := CreateExchangeName(user1, user2)
-	e21 := CreateExchangeName(user2, user1)
+	chatPreffix := CreateChatPreffix(user1, user2)
 
-	for _, chat := range exchanges {
-		if chat == e12 || chat == e21 {
-			exchangeName = chat
-			break
-		}
-	}
-
-	if exchangeName == "" {
-		exchangeName = e12
-		err := CreateExchange(ch, exchangeName, user1, user2)
-		if err != nil {
-			return "", err
-		}
-	} else {
-		channels, err := getExchangeQueues(exchangeName)
-		if err != nil {
-			return "", err
-		}
-
-		for _, channel := range channels {
-			chInt, err := strconv.Atoi(channel)
+	for _, chat := range chats {
+		if strings.HasPrefix(chat, chatPreffix) {
+			chatId, err = strconv.Atoi(strings.Split(chat, "-")[2])
 			if err != nil {
 				return "", err
 			}
-
-			if chInt > channelId {
-				channelId = chInt
-			}
 		}
 	}
+	chatId++
 
-	channelId++
-	queueName := CreateQueueName(exchangeName, fmt.Sprintf("%d", channelId))
+	ch12 := CreateChatName(user1, user2, fmt.Sprintf("%d", chatId))
+	ch21 := CreateChatName(user2, user1, fmt.Sprintf("%d", chatId))
 
-	err = CreateQueue(
-		ch,
-		exchangeName,
-		queueName,
-		queueName,
-	)
+	err = CreateExchange(ch, ch12, user1, user2)
 	if err != nil {
-		return "", fmt.Errorf("[CHAT CREATOR] Error creating channel '%s' between %s and %s: %s", queueName, user1, user2, err)
+		return "", fmt.Errorf("[CHAT CREATOR] Error creating exchange '%s' between %s and %s: %s", chatName, user1, user2, err)
+	}
+	err = CreateExchange(ch, ch21, user2, user1)
+	if err != nil {
+		return "", fmt.Errorf("[CHAT CREATOR] Error creating exchange '%s' between %s and %s: %s", chatName, user2, user1, err)
 	}
 
-	return fmt.Sprintf("%d", channelId), nil
+	err = CreateQueue(ch, ch12)
+	if err != nil {
+		return "", fmt.Errorf("[CHAT CREATOR] Error creating queue '%s' between %s and %s: %s", chatName, user1, user2, err)
+	}
+
+	err = CreateQueue(ch, ch21)
+	if err != nil {
+		return "", fmt.Errorf("[CHAT CREATOR] Error creating queue '%s' between %s and %s: %s", chatName, user2, user1, err)
+	}
+
+	return fmt.Sprintf("%d", chatId), nil
 }
 
 func UserExists(username string) (bool, error) {
@@ -398,47 +392,6 @@ func getAllExchanges() ([]string, error) {
 	return exchangeNames, nil
 }
 
-func getExchangeQueues(exchange string) ([]string, error) {
-	url := fmt.Sprintf("%s/queues/%s", consts.RabbitmqAPI, consts.Vhost)
-
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	req.SetBasicAuth(consts.RabbitmqUser, consts.RabbitmqPassword)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to get queues: %s, status: %d", body, resp.StatusCode)
-	}
-
-	var queues []struct {
-		Name string `json:"name"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&queues); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	log.Printf("[QUEUE] Got %v", queues)
-
-	var queueNames []string
-	for _, queue := range queues {
-		if strings.HasPrefix(queue.Name, exchange) {
-			queueNames = append(queueNames, queue.Name)
-		}
-	}
-
-	return queueNames, nil
-}
-
 func CreateGuestUser(ch *amqp.Channel) error {
 	err := CreateUser(ch, "guest", "guest")
 	if err != nil {
@@ -456,34 +409,21 @@ func GetUserChats(ch *amqp.Channel, username string, secret bool) ([]string, err
 
 	userChats := []string{}
 
-	for _, exchange := range exchanges {
-		users := strings.Split(exchange, "-")
-		if len(users) != 2 {
+	for _, chat := range exchanges {
+		parts := strings.Split(chat, "-")
+		if len(parts) != 3 {
 			continue
 		}
+		user := parts[0]
 
-		if users[0] == username || users[1] == username {
-			var reciever string
-			if users[0] == username {
-				reciever = users[1]
-			} else {
-				reciever = users[0]
-			}
-
-			if reciever == "response" {
+		if user == username {
+			if parts[1] == "response" {
 				continue
 			}
 
-			queues, err := getExchangeQueues(exchange)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get exchange queues: %w", err)
-			}
-
-			for _, queue := range queues {
-				if secret && strings.Contains(strings.TrimPrefix(queue, exchange), "S") ||
-					!secret && !strings.Contains(strings.TrimPrefix(queue, exchange), "S") {
-					userChats = append(userChats, fmt.Sprintf("%s%s", reciever, strings.TrimPrefix(queue, exchange)))
-				}
+			if secret && strings.Contains(parts[2], "S") ||
+				!secret && !strings.Contains(parts[2], "S") {
+				userChats = append(userChats, strings.TrimPrefix(chat, fmt.Sprintf("%s-", user)))
 			}
 		}
 	}
@@ -491,10 +431,10 @@ func GetUserChats(ch *amqp.Channel, username string, secret bool) ([]string, err
 	return userChats, nil
 }
 
-func CreateExchangeName(user1, user2 string) string {
-	return fmt.Sprintf("%s-%s", user1, user2)
+func CreateChatName(user1, user2, chatId string) string {
+	return fmt.Sprintf("%s-%s", CreateChatPreffix(user1, user2), chatId)
 }
 
-func CreateQueueName(exchangeName, queueId string) string {
-	return fmt.Sprintf("%s-%s", exchangeName, queueId)
+func CreateChatPreffix(user1, user2 string) string {
+	return fmt.Sprintf("%s-%s", user1, user2)
 }

@@ -3,14 +3,13 @@ package handlers
 import (
 	"fmt"
 	"html/template"
-	"io"
 	"log"
 	remoteserver "messengerClient/back/remoteServer"
 	"messengerClient/back/saved"
 	"messengerClient/consts"
 	"messengerClient/types"
 	"net/http"
-	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -105,13 +104,13 @@ func newChatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	if r.Method == "POST" {
 		password, err := r.Cookie("currentPassword")
 		if err != nil {
-			http.Redirect(w, r, "/newChat?alert=You are not logged in", http.StatusSeeOther)
+			http.Redirect(w, r, "/chats/new?alert=You are not logged in", http.StatusSeeOther)
 			return
 		}
 
-		recipient := r.FormValue("name")
-		if recipient == "" {
-			http.Redirect(w, r, "/newChat?alert=Empty name", http.StatusSeeOther)
+		reciever := r.FormValue("name")
+		if reciever == "" {
+			http.Redirect(w, r, "/chats/new?alert=Empty name", http.StatusSeeOther)
 			return
 		}
 
@@ -124,13 +123,13 @@ func newChatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 		case "rc6":
 			chatType = consts.EncriptionRC6
 		default:
-			http.Redirect(w, r, "/newChat?alert=Invalid chat type", http.StatusSeeOther)
+			http.Redirect(w, r, "/chats/new?alert=Invalid chat type", http.StatusSeeOther)
 			return
 		}
 
-		chatID, err := saved.NewChat(data.User, password.Value, recipient, chatType)
+		chatID, err := saved.NewChat(data.User, password.Value, reciever, chatType)
 		if err != nil {
-			http.Redirect(w, r, fmt.Sprintf("/newChat?alert=Error creating chat: %s", err), http.StatusSeeOther)
+			http.Redirect(w, r, fmt.Sprintf("/chats/new?alert=Error creating chat: %s", err), http.StatusSeeOther)
 			return
 		}
 
@@ -158,6 +157,13 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 		return
 	}
 
+	parts := strings.Split(chatID, "-")
+	if len(parts) != 2 {
+		log.Println("Invalid chatID:", chatID)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
 	password, err := r.Cookie("currentPassword")
 	if err != nil {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -170,60 +176,47 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 		if r.FormValue("message") != "" {
 			message := types.Message{
 				Author:  data.User,
-				Message: r.FormValue("message"),
+				Message: []byte(r.FormValue("message")),
 				Type:    "text",
-				Id:      fmt.Sprintf("%v", time.Now()),
+				Id:      fmt.Sprintf("%v", time.Now().UTC().Format(time.StampNano)),
 			}
 
 			log.Printf("[BACKEND][MESSAGE] Sending message: %s", message.Message)
 
-			progressChan = remoteserver.SendMessage(data.User, password.Value, chatID, message)
+			progressChan = remoteserver.SendMessage(data.User, password.Value, parts[0], parts[1], message)
 			saved.AddMessage(data.User, chatID, message)
 			consts.AddListener(data.User, chatID, message.Id, progressChan)
 		}
 
-		// TODO
-		if r.FormValue("file") != "" {
-			r.ParseMultipartForm(10 << 20)
-			file, handler, err := r.FormFile("file")
-
+		if file, _, _ := r.FormFile("file"); file != nil {
+			_, handler, err := r.FormFile("file")
 			if err != nil {
-				log.Printf("[BACKEND][FILE UPLOAD] Error opening file: %s", err)
-				return
-			}
-			defer file.Close()
-
-			fileBytes, err := io.ReadAll(file)
-			if err != nil {
-				log.Printf("[BACKEND][FILE UPLOAD] Error reading file: %s", err)
 				return
 			}
 
-			parts := strings.Split(handler.Filename, ".")
-			filename := strings.Join(parts[:len(parts)-1], ".")
-			extension := parts[len(parts)-1]
-			if _, err := os.Stat(fmt.Sprintf("back/saved/%s.%s", filename, extension)); err == nil {
-				for i := 1; ; i++ {
-					if _, err := os.Stat(fmt.Sprintf("back/saved/%s(%d).%s", filename, i, extension)); err == nil {
-						i++
-					} else {
-						filename = fmt.Sprintf("%s(%d).%s", filename, i, extension)
-						break
-					}
-				}
-			} else {
-				filename = filename + "." + extension
+			msgType := "file/"
+			if handler.Header.Get("Content-Type") == "image/jpeg" {
+				msgType = "image/"
 			}
 
-			savedFile, err := os.Create("back/saved/" + filename)
-			if err != nil {
-				log.Printf("[BACKEND][FILE UPLOAD] Error creating file: %s", err)
+			message := types.Message{
+				Author: data.User,
+				Type:   fmt.Sprintf("%s%s", msgType, handler.Filename),
+				Id:     fmt.Sprintf("%v", time.Now().UTC().Format(time.StampNano)),
 			}
-			defer savedFile.Close()
-			savedFile.Write(fileBytes)
 
-			progressChan = remoteserver.SendFile(chatID, savedFile)
-			saved.AddMessage(data.User, chatID, types.Message{Author: data.User, Type: "file", Message: filename})
+			log.Println("[BACKEND][MESSAGE] Sending file")
+
+			progressChan, chBytes := remoteserver.SendFile(data.User, password.Value, parts[0], parts[1], message, r)
+
+			saved.AddMessage(data.User, chatID, message)
+			consts.AddListener(data.User, chatID, message.Id, progressChan)
+
+			go func() {
+				fileContents := <-chBytes
+				saved.AddFile(data.User, chatID, message.Id, fileContents)
+				close(chBytes)
+			}()
 		}
 	}
 
@@ -232,17 +225,12 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 		log.Printf("[FRONT][TEMPLATE] Error parsing template: %s", err)
 	}
 
-	chat := strings.Split(r.URL.Query().Get("id"), "-")
-	if len(chat) != 2 {
-		log.Printf("[FRONT][TEMPLATE] Error getting chat id: %s", err)
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
+	log.Printf("[FRONT][TEMPLATE] Chat id: %s", chatID)
 
-	data.Name = chat[0]
-	data.Message = chat[1]
+	data.Name = parts[0]
+	data.Message = parts[1]
 
-	data.Messages, err = saved.GetMessages(data.User, password.Value, chatID)
+	data.Messages, err = saved.GetMessages(data.User, password.Value, parts[0], parts[1])
 	if err != nil {
 		log.Printf("[FRONT][TEMPLATE] Error getting messages: %s", err)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -252,9 +240,14 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	data.Listeners = make([]string, 0)
 	for key := range consts.EventListeners.Events[data.User][chatID] {
 		data.Listeners = append(data.Listeners, key)
+		log.Printf("[FRONT][TEMPLATE] Listener: %s", key)
 	}
 
-	err = t.Execute(w, data)
+	funcMap := template.FuncMap{
+		"contains": strings.Contains,
+	}
+
+	err = t.Funcs(funcMap).Execute(w, data)
 	if err != nil {
 		log.Printf("[FRONT][TEMPLATE] Error executing template: %s", err)
 	}
@@ -289,42 +282,37 @@ func updateChatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 		return
 	}
 
-	userUpdates := consts.EventListeners.Events[user]
-	if userUpdates == nil {
+	if consts.EventListeners.Events[user] == nil {
 		consts.EventListeners.Mu.Lock()
 		consts.EventListeners.Events[user] = make(map[string]map[string]chan int)
-		userUpdates = consts.EventListeners.Events[user]
 		consts.EventListeners.Mu.Unlock()
 	}
 
-	if userUpdates[chatId] == nil {
+	if consts.EventListeners.Events[user][chatId] == nil {
 		consts.EventListeners.Mu.Lock()
-		userUpdates[chatId] = make(map[string]chan int)
+		consts.EventListeners.Events[user][chatId] = make(map[string]chan int)
 		consts.EventListeners.Mu.Unlock()
 	}
 
-	if userUpdates[chatId][eventID] == nil {
-		fmt.Fprintf(w, "data: 0\n\n")
+	if _, ok := consts.EventListeners.Events[user][chatId][eventID]; !ok {
+		fmt.Fprintf(w, "data:\n\n")
 		flusher.Flush()
 		return
 	}
 
-	for {
-		if userUpdates[chatId][eventID] == nil {
-			fmt.Fprintf(w, "data: 0\n\n")
-			flusher.Flush()
-
-			break
-		}
-
-		progress := <-userUpdates[chatId][eventID]
-		fmt.Fprintf(w, "data: %d\n\n", progress)
+	if consts.EventListeners.Events[user][chatId][eventID] == nil {
+		fmt.Fprintf(w, "data: 0\n\n")
 		flusher.Flush()
-
-		if progress == 0 {
-			break
-		}
+		consts.RemoveListener(user, chatId, eventID)
+		return
 	}
+
+	progress := <-consts.EventListeners.Events[user][chatId][eventID]
+	fmt.Fprintf(w, "data: %d\n\n", progress)
+	if progress == 0 {
+		consts.RemoveListener(user, chatId, eventID)
+	}
+	flusher.Flush()
 }
 
 func recieveChatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
@@ -347,5 +335,46 @@ func recieveChatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 		message := <-chatUpdates
 		fmt.Fprintf(w, "data: %s\n\n", message)
 		flusher.Flush()
+	}
+}
+
+func filePage(w http.ResponseWriter, r *http.Request, data types.Data) {
+	chat := r.URL.Query().Get("chat")
+	if chat == "" {
+		return
+	}
+
+	msgId := r.URL.Query().Get("id")
+	if msgId == "" {
+		return
+	}
+
+	msg, err := saved.GetMessage(data.User, chat, msgId)
+	if err != nil {
+		return
+	}
+
+	filename := msg.Type
+	if strings.HasPrefix(filename, "image/") {
+		filename = strings.TrimPrefix(filename, "image/")
+	} else if strings.HasPrefix(filename, "file/") {
+		filename = strings.TrimPrefix(filename, "file/")
+	} else {
+		return
+	}
+
+	body := []byte(msg.Message)
+
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+
+	contentType := http.DetectContentType(body)
+	w.Header().Set("Content-Type", contentType)
+
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(http.StatusOK)
+
+	_, err = w.Write(body)
+	if err != nil {
+		log.Printf("[FRONT][FILE] Error writing file: %s", err)
 	}
 }

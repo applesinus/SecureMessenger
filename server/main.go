@@ -91,13 +91,10 @@ func listenRequests(ctx context.Context, conn *amqp.Connection) {
 				reqId = msg.Headers["requestId"].(string)
 			}
 
-			log.Printf("[REQUEST LISTENER] Responding to %s", userId)
-
 			// Check if user exists
 			if strings.Contains(body, "userExists_") {
 				parts := strings.Split(body, "_")
 				if len(parts) != 2 {
-					log.Printf("[REQUEST LISTENER] Failed to parse request: %s", body)
 					if err := respond(conn, userId, reqId, "false"); err != nil {
 						log.Printf("[REQUEST LISTENER] Failed to respond: %v", err)
 					}
@@ -145,7 +142,6 @@ func listenRequests(ctx context.Context, conn *amqp.Connection) {
 					respond(conn, userId, reqId, fmt.Sprintf("%v", err))
 				}
 
-				log.Printf("[REQUEST LISTENER] Still respond to %s", userId)
 				respond(conn, userId, reqId, fmt.Sprintf("ok_%s", strings.Join(chats, "_")))
 			}
 
@@ -229,29 +225,50 @@ func respond(conn *amqp.Connection, user, reqId, message string) error {
 	}
 	defer ch.Close()
 
-	exchangeName := api.CreateExchangeName(user, reqId)
-	queueName := api.CreateQueueName(exchangeName, "response")
+	responseChatName := api.CreateChatName(user, "response", reqId)
 	if user != "guest" {
-		exchangeName = fmt.Sprintf("%s-%s", user, "response")
-		queueName = exchangeName
+		responseChatName = fmt.Sprintf("%s-%s", user, "response")
 	}
 
-	log.Printf("[SERVER][RABBIT] exchange: %s, queue: %s", exchangeName, queueName)
-
 	if user == "guest" {
-		err = api.CreateExchange(ch, exchangeName, "guest", "")
+		err = api.CreateExchange(ch, responseChatName, "", "guest")
 		if err != nil {
 			return fmt.Errorf("failed to create exchange: %v", err)
 		}
-		err = api.CreateQueue(ch, exchangeName, queueName, queueName)
+
+		defer func() {
+			go func() {
+				ch, err := conn.Channel()
+				if err != nil {
+					log.Printf("[SERVER][RABBIT] Failed to open a channel: %v", err)
+					return
+				}
+				defer ch.Close()
+
+				time.Sleep(time.Minute)
+
+				_, err = ch.QueueDelete(responseChatName, false, false, false)
+				if err != nil {
+					log.Printf("[SERVER][RABBIT] Failed to delete queue: %v", err)
+				}
+				err = ch.ExchangeDelete(responseChatName, false, false)
+				if err != nil {
+					log.Printf("[SERVER][RABBIT] Failed to delete exchange: %v", err)
+				}
+
+				api.RevokePermissions("guest", responseChatName)
+			}()
+		}()
+
+		err = api.CreateQueue(ch, responseChatName)
 		if err != nil {
 			return fmt.Errorf("failed to create queue: %v", err)
 		}
 	}
 
 	err = ch.Publish(
-		exchangeName,
-		queueName,
+		responseChatName,
+		responseChatName,
 		false,
 		false,
 		amqp.Publishing{
@@ -261,34 +278,6 @@ func respond(conn *amqp.Connection, user, reqId, message string) error {
 
 	if err != nil {
 		return fmt.Errorf("failed to publish a message: %v", err)
-	}
-
-	log.Printf("[SERVER][RABBIT] Sent a response to %s:%s: %s", user, reqId, message)
-
-	if user == "guest" {
-		go func() {
-			ch, err := conn.Channel()
-			if err != nil {
-				log.Printf("[SERVER][RABBIT] Failed to open a channel: %v", err)
-				return
-			}
-			defer ch.Close()
-
-			time.Sleep(time.Minute)
-
-			_, err = ch.QueueDelete(queueName, false, false, false)
-			if err != nil {
-				log.Printf("[SERVER][RABBIT] Failed to delete queue: %v", err)
-			}
-			err = ch.ExchangeDelete(exchangeName, false, false)
-			if err != nil {
-				log.Printf("[SERVER][RABBIT] Failed to delete exchange: %v", err)
-			}
-
-			api.RevokePermissions("guest", exchangeName)
-
-			log.Println("[SERVER][RABBIT] Ended closing response")
-		}()
 	}
 
 	return nil

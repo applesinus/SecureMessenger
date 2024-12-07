@@ -1,13 +1,1 @@
-{
-  "boba": {
-    "Mu": {},
-    "Chats": {
-      "biba:0": {
-        "id": "0",
-        "reciever": "biba",
-        "encryption": "no",
-        "messages": []
-      }
-    }
-  }
-}
+{}
