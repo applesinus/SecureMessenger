@@ -189,6 +189,17 @@
             <p>Max file size is 50 MB</p>
         </form>
 
+        <actions>
+            <p>
+                <button type="button" onclick="enableDelete()">Delete the chat</button>
+                <a id="delete" href="/chat/delete" style="display: none;">Click here if you're sure to delete the chat</a>
+            </p>
+            <p>
+                <button type="button" onclick="enableKick()">Kick other user</button>
+                <a id="kick" href="/chat/kick" style="display: none;">Click here if you're sure to kick the user</a>
+            </p>
+        </actions>
+
         <p>
             <button type="button" onclick="scrollDown()">Scroll to bottom</button>
         </p>
@@ -205,6 +216,18 @@
     function enable(id) {
         doc = document.getElementById("fileLink_" + id);
         if (doc) doc.classList.remove("disabled");
+    }
+
+    function enableDelete() {
+        document.getElementById("delete").style.display = "block";
+        await new Promise(r => setTimeout(r, 10000));
+        document.getElementById("delete").style.display = "none";
+    }
+
+    function enableKick() {
+        document.getElementById("kick").style.display = "block";
+        await new Promise(r => setTimeout(r, 10000));
+        document.getElementById("kick").style.display = "none";
     }
 
     document.addEventListener('DOMContentLoaded', () => {
