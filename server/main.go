@@ -174,6 +174,54 @@ func listenRequests(ctx context.Context, conn *amqp.Connection) {
 
 				respond(conn, userId, reqId, fmt.Sprintf("ok_%s", id))
 			}
+
+			// Delete chat
+			if strings.Contains(body, "deleteChat_") {
+				parts := strings.Split(body, "_")
+				if len(parts) != 2 {
+					log.Printf("[REQUEST LISTENER] Failed to parse request: %s", body)
+					respond(conn, userId, reqId, fmt.Sprintf("not 2 parts but %d", len(parts)))
+				}
+
+				chat := parts[1]
+				parts = strings.Split(chat, "-")
+				if len(parts) != 2 {
+					log.Printf("[REQUEST LISTENER] Failed to parse request: %s", body)
+					respond(conn, userId, reqId, fmt.Sprintf("not 2 parts in chatId but %d", len(parts)))
+				}
+
+				err := api.DeleteChat(ch, userId, parts[0], parts[1])
+				if err != nil {
+					log.Printf("[REQUEST LISTENER] %v", err)
+					respond(conn, userId, reqId, fmt.Sprintf("%v", err))
+				}
+
+				respond(conn, userId, reqId, "ok")
+			}
+
+			// Kick user from the chat
+			if strings.Contains(body, "kickUser_") {
+				parts := strings.Split(body, "_")
+				if len(parts) != 2 {
+					log.Printf("[REQUEST LISTENER] Failed to parse request: %s", body)
+					respond(conn, userId, reqId, fmt.Sprintf("not 2 parts but %d", len(parts)))
+				}
+
+				chat := parts[1]
+				parts = strings.Split(chat, "-")
+				if len(parts) != 2 {
+					log.Printf("[REQUEST LISTENER] Failed to parse request: %s", body)
+					respond(conn, userId, reqId, fmt.Sprintf("not 2 parts in chatId but %d", len(parts)))
+				}
+
+				err := api.KickUser(ch, userId, parts[0], parts[1])
+				if err != nil {
+					log.Printf("[REQUEST LISTENER] %v", err)
+					respond(conn, userId, reqId, fmt.Sprintf("%v", err))
+				}
+
+				respond(conn, userId, reqId, "ok")
+			}
 		}
 	}
 }

@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"io"
 	"log"
 	"messengerClient/back/saved"
+	"messengerClient/consts"
 	"os"
 	"sync"
 )
@@ -19,27 +19,20 @@ type UsersType struct {
 
 var Users UsersType
 
-func LoadUsers(ctx context.Context, wg *sync.WaitGroup) {
+func RefreshUsers(ctx context.Context, wg *sync.WaitGroup) {
 	file, err := os.OpenFile("back/users.json", os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		log.Fatalf("[BACKEND][USERS LOAD] Error opening file: %s", err)
 	}
 
-	body, err := io.ReadAll(file)
-	if err != nil {
-		log.Fatalf("[BACKEND][USERS LOAD] Error reading file: %s", err)
-	}
-
-	users := make(map[string]struct{})
-	err = json.Unmarshal(body, &users)
-	if err != nil {
-		log.Fatalf("[BACKEND][USERS LOAD] Error unmarshalling file: %s", err)
-	}
+	file.Truncate(0)
+	file.Seek(0, 0)
+	file.WriteString("{}")
 
 	Users = UsersType{
 		rwmu:  new(sync.RWMutex),
 		file:  file,
-		users: users,
+		users: make(map[string]struct{}),
 	}
 
 	defer file.Close()
@@ -75,17 +68,26 @@ func GetUsers() map[string]struct{} {
 	return Users.users
 }
 
-func Login(user string) {
+func Login(user, password string) {
 	Users.rwmu.Lock()
-	defer Users.rwmu.Unlock()
+	Users.rwmu.Unlock()
 	Users.users[user] = struct{}{}
+
+	consts.EventListeners.Mu.Lock()
+	consts.EventListeners.Events[user] = make(map[string]map[string]chan int)
+	consts.EventListeners.Mu.Unlock()
+
+	consts.Recievers.Mu.Lock()
+	consts.Recievers.Events[user] = make(map[string]chan []byte)
+	consts.Recievers.Mu.Unlock()
+
+	saved.CheckChats(user, password)
 
 	saveUsers()
 }
 
 func Logout(user string) {
 	Users.rwmu.Lock()
-	defer Users.rwmu.Unlock()
 	delete(Users.users, user)
 
 	scanner := bufio.NewScanner(Users.file)
@@ -105,6 +107,15 @@ func Logout(user string) {
 
 	saved.ClearChats(user)
 	saveUsers()
+	Users.rwmu.Unlock()
+
+	consts.EventListeners.Mu.Lock()
+	delete(consts.EventListeners.Events, user)
+	consts.EventListeners.Mu.Unlock()
+
+	consts.Recievers.Mu.Lock()
+	delete(consts.Recievers.Events, user)
+	consts.Recievers.Mu.Unlock()
 }
 
 // OLD FUNCTIONS

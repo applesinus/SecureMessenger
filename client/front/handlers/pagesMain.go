@@ -11,7 +11,7 @@ import (
 	"net/http"
 )
 
-func mainPage(w http.ResponseWriter, r *http.Request, data types.Data) {
+func mainPage(w http.ResponseWriter, data types.Data) {
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/main.html")
 	if err != nil {
 		log.Printf("[FRONT][TEMPLATE] Error parsing template: %s", err)
@@ -55,7 +55,9 @@ func loginPage(w http.ResponseWriter, r *http.Request) {
 
 		updateCookie(w, "currentUser", username, expireTime)
 		updateCookie(w, "currentPassword", password, expireTime)
-		users.Login(username)
+
+		users.Login(username, password)
+
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -108,9 +110,11 @@ func registerPage(w http.ResponseWriter, r *http.Request) {
 		}
 
 		log.Printf("Registered user: %s:%s", username, password)
+
 		updateCookie(w, "currentUser", username, expireTime)
 		updateCookie(w, "currentPassword", crypto.Hash(password), expireTime)
-		users.Login(username)
+
+		users.Login(username, crypto.Hash(password))
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}

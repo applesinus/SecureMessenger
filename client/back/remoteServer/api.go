@@ -489,3 +489,25 @@ func RabbitIsConnected() bool {
 func createRequestId() string {
 	return crypto.Hash(fmt.Sprintf("%d", time.Now().UnixNano()+rand.Int63()))
 }
+
+func DeleteChat(user, password, reciever, chatId string) error {
+	resp, err := makeRequest(user, password, fmt.Sprintf("deleteChat_%s-%s", reciever, chatId), "")
+	if err != nil {
+		return err
+	}
+	if resp != "ok" {
+		return fmt.Errorf("failed to delete chat: %s", resp)
+	}
+	return nil
+}
+
+func KickUserFromChat(user, password, reciever, chatId string) error {
+	resp, err := makeRequest(user, password, fmt.Sprintf("kickUser_%s-%s", reciever, chatId), "")
+	if err != nil {
+		return err
+	}
+	if resp != "ok" {
+		return fmt.Errorf("failed to kick user from chat: %s", resp)
+	}
+	return nil
+}

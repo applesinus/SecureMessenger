@@ -438,3 +438,46 @@ func CreateChatName(user1, user2, chatId string) string {
 func CreateChatPreffix(user1, user2 string) string {
 	return fmt.Sprintf("%s-%s", user1, user2)
 }
+
+func DeleteChat(ch *amqp.Channel, username, reciever, chatId string) error {
+	errorString := ""
+
+	err := ch.ExchangeDelete(CreateChatName(reciever, username, chatId), false, false)
+	if err != nil {
+		errorString += fmt.Sprintf("failed to delete exchange: %s", err.Error())
+	}
+
+	err = ch.ExchangeDelete(CreateChatName(username, reciever, chatId), false, false)
+	if err != nil {
+		if errorString != "" {
+			errorString += ", "
+		}
+		errorString += fmt.Sprintf("failed to delete exchange: %s", err.Error())
+	}
+
+	_, err = ch.QueueDelete(CreateChatName(reciever, username, chatId), false, false, false)
+	if err != nil {
+		if errorString != "" {
+			errorString += ", "
+		}
+		errorString += fmt.Sprintf("failed to delete queue: %s", err.Error())
+	}
+
+	_, err = ch.QueueDelete(CreateChatName(username, reciever, chatId), false, false, false)
+	if err != nil {
+		if errorString != "" {
+			errorString += ", "
+		}
+		errorString += fmt.Sprintf("failed to delete queue: %s", err.Error())
+	}
+
+	if errorString != "" {
+		return fmt.Errorf("%s", errorString)
+	}
+
+	return nil
+}
+
+func KickUser(ch *amqp.Channel, username, reciever, chatId string) error {
+	return DeleteChat(ch, username, reciever, chatId)
+}

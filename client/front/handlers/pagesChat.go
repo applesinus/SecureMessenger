@@ -41,6 +41,7 @@ func chatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	}
 
 	data.Message = "Your chats"
+	data.Alert = r.URL.Query().Get("alert")
 
 	err = t.Execute(w, data)
 	if err != nil {
@@ -67,6 +68,7 @@ func regularChatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	}
 
 	data.Message = "Regular chats"
+	data.Alert = r.URL.Query().Get("alert")
 
 	err = t.Execute(w, data)
 	if err != nil {
@@ -93,6 +95,7 @@ func secretChatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	}
 
 	data.Message = "Secret chats"
+	data.Alert = r.URL.Query().Get("alert")
 
 	err = t.Execute(w, data)
 	if err != nil {
@@ -191,6 +194,7 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 		if file, _, _ := r.FormFile("file"); file != nil {
 			_, handler, err := r.FormFile("file")
 			if err != nil {
+				http.Redirect(w, r, "/chat?id="+chatID, http.StatusSeeOther)
 				return
 			}
 
@@ -218,6 +222,9 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 				close(chBytes)
 			}()
 		}
+
+		http.Redirect(w, r, "/chat?id="+chatID, http.StatusSeeOther)
+		return
 	}
 
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/chat.html")
@@ -322,7 +329,7 @@ func recieveChatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		log.Printf("[FRONT][RECIEVER] Error on creating flusher: %s", ok)
+		log.Printf("[FRONT][RECIEVER] Error on creating flusher: %v", ok)
 		return
 	}
 	defer flusher.Flush()
@@ -377,4 +384,50 @@ func filePage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	if err != nil {
 		log.Printf("[FRONT][FILE] Error writing file: %s", err)
 	}
+}
+
+func deleteChatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
+	chatId := r.URL.Query().Get("id")
+	if chatId == "" {
+		http.Redirect(w, r, "/chats", http.StatusSeeOther)
+		return
+	}
+
+	password, err := r.Cookie("currentPassword")
+	if err != nil {
+		http.Redirect(w, r, "/chats?alert=You are not logged in", http.StatusSeeOther)
+		return
+	}
+
+	err = saved.DeleteChat(data.User, password.Value, chatId)
+	if err != nil {
+		http.Redirect(w, r, "/chats?alert=Error deleting chat: "+err.Error(), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/chats", http.StatusSeeOther)
+}
+
+func kickUserFromChatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
+	log.Println("[FRONT][KICK] Kicking user from chat")
+
+	chatId := r.URL.Query().Get("id")
+	if chatId == "" {
+		http.Redirect(w, r, "/chats", http.StatusSeeOther)
+		return
+	}
+
+	password, err := r.Cookie("currentPassword")
+	if err != nil {
+		http.Redirect(w, r, "/chats?alert=You are not logged in", http.StatusSeeOther)
+		return
+	}
+
+	err = saved.KickUserFromChat(data.User, password.Value, chatId)
+	if err != nil {
+		http.Redirect(w, r, "/chats?alert=Error kicking user from chat: "+err.Error(), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/getFile/%s-%s.json", data.User, chatId), http.StatusSeeOther)
 }

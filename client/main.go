@@ -28,7 +28,7 @@ func main() {
 	go back.Start(ctx, wg)
 	wg.Add(1)
 
-	go users.LoadUsers(ctx, wg)
+	go users.RefreshUsers(ctx, wg)
 	wg.Add(1)
 
 	endCh := make(chan struct{})

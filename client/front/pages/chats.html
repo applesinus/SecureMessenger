@@ -33,4 +33,12 @@
 {{end}}
 
 {{define "afterbody"}}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        message = "{{.Alert}}"
+        if (message != "") {
+            alert(message);
+        }
+    });
+</script>
 {{end}}

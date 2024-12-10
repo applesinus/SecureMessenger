@@ -58,6 +58,12 @@
             border: 1px solid #fff;
             border-radius: 3px;
         }
+        .danger {
+            background-color: #f44336;
+        }
+        .danger:hover {
+            background-color: #e53935;
+        }
         button {
             height: 35px;
             padding: 0 10px;
@@ -175,7 +181,7 @@
         <form id="sendMessage" method="post">
             <input type="hidden" name="formID" value="sendMessage">
             <p>
-                <input name="message" type="text" placeholder="Type your message" style="width: 100%;">
+                <input name="message" type="text" autocomplete="off" placeholder="Type your message" style="width: 100%;">
                 <button type="submit">Send</button>
             </p>
         </form>
@@ -190,18 +196,27 @@
         </form>
 
         <actions>
-            <p>
-                <button type="button" onclick="enableDelete()">Delete the chat</button>
-                <a id="delete" href="/chat/delete" style="display: none;">Click here if you're sure to delete the chat</a>
-            </p>
-            <p>
-                <button type="button" onclick="enableKick()">Kick other user</button>
-                <a id="kick" href="/chat/kick" style="display: none;">Click here if you're sure to kick the user</a>
+            <p style="display: flex; justify-content: space-around;">
+                <a class="danger" id="ensureDelete" style="display: none;" href="/chat/delete?id={{$.Name}}-{{$.Message}}">
+                    <button class="danger" type="button">
+                        Confirm deleting the chat (can't be undone)
+                    </button>
+                </a>
+                <button id="delete" type="button" onclick="enableDelete()" class="danger">Delete the chat</button>
+
+                <button type="button" onclick="scrollDown()">Scroll to bottom</button>
+
+                <button id="kick" type="button" onclick="enableKick()" class="danger">Kick the other user</button>
+                <a class="danger" id="ensureKick" style="display: none;" href="/chat/kick?id={{$.Name}}-{{$.Message}}">
+                    <button class="danger" type="button" onclick="">
+                        Confirm kicking the other user (can't be undone)
+                    </button>
+                </a>
             </p>
         </actions>
 
         <p>
-            <button type="button" onclick="scrollDown()">Scroll to bottom</button>
+            
         </p>
     </div>
 {{end}}
@@ -218,16 +233,24 @@
         if (doc) doc.classList.remove("disabled");
     }
 
-    function enableDelete() {
-        document.getElementById("delete").style.display = "block";
-        await new Promise(r => setTimeout(r, 10000));
+    async function enableDelete() {
         document.getElementById("delete").style.display = "none";
+        document.getElementById("ensureDelete").style.display = "block";
+
+        await new Promise(r => setTimeout(r, 10000));
+
+        document.getElementById("delete").style.display = "block";
+        document.getElementById("ensureDelete").style.display = "none";
     }
 
-    function enableKick() {
-        document.getElementById("kick").style.display = "block";
-        await new Promise(r => setTimeout(r, 10000));
+    async function enableKick() {
         document.getElementById("kick").style.display = "none";
+        document.getElementById("ensureKick").style.display = "block";
+
+        await new Promise(r => setTimeout(r, 10000));
+
+        document.getElementById("kick").style.display = "block";
+        document.getElementById("ensureKick").style.display = "none";
     }
 
     document.addEventListener('DOMContentLoaded', () => {

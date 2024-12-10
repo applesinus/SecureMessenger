@@ -16,22 +16,14 @@ const (
 )
 
 func Init() {
-	avaliableUsers := users.GetUsers()
-
 	consts.EventListeners = types.EventsType{
 		Events: make(map[string]map[string]map[string]chan int),
 		Mu:     new(sync.Mutex),
-	}
-	for users := range avaliableUsers {
-		consts.EventListeners.Events[users] = make(map[string]map[string]chan int)
 	}
 
 	consts.Recievers = types.RecievedType{
 		Events: make(map[string]map[string]chan []byte),
 		Mu:     new(sync.Mutex),
-	}
-	for users := range avaliableUsers {
-		consts.Recievers.Events[users] = make(map[string]chan []byte)
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -64,6 +56,16 @@ func Init() {
 		if !ok && path != "/login" && path != "/register" {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
+		}
+
+		password, err := r.Cookie("currentPassword")
+		if err != nil {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		if _, ok := users.GetUsers()[username]; !ok {
+			users.Login(username, password.Value)
 		}
 
 		data := types.Data{
@@ -107,8 +109,14 @@ func Init() {
 		case "/chat/recieve":
 			recieveChatPage(w, r, data)
 
+		case "/chat/delete":
+			deleteChatPage(w, r, data)
+
+		case "/chat/kick":
+			kickUserFromChatPage(w, r, data)
+
 		case "", "/main":
-			mainPage(w, r, data)
+			mainPage(w, data)
 		default:
 			http.Redirect(w, r, "/main", http.StatusSeeOther)
 		}

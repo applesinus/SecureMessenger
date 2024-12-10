@@ -8,6 +8,7 @@ import (
 	"messengerClient/consts"
 	"messengerClient/types"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -52,6 +53,47 @@ func SaveChats() {
 	file.Truncate(0)
 	file.Seek(0, 0)
 	file.Write(buff)
+}
+
+func CheckChats(user, password string) {
+	if user == "" || user == "guest" {
+		return
+	}
+
+	if _, ok := SavedChats[user]; !ok {
+		SavedChats[user] = types.Chats{
+			Chats: make(map[string]*types.ChatType),
+			Mu:    new(sync.Mutex),
+		}
+	}
+
+	chatsOnServer, err := remoteServer.GetUserChats(user, password)
+	if err != nil {
+		return
+	}
+
+	secretChatsOnServer, err := remoteServer.GetUserSecretChats(user, password)
+	if err != nil {
+		return
+	}
+
+	chats := make(map[string]struct{})
+
+	SavedChats[user].Mu.Lock()
+	defer SavedChats[user].Mu.Unlock()
+
+	for _, chat := range chatsOnServer {
+		chats[chat] = struct{}{}
+	}
+	for _, chat := range secretChatsOnServer {
+		chats[chat] = struct{}{}
+	}
+
+	for chat := range SavedChats[user].Chats {
+		if _, ok := chats[chat]; !ok {
+			delete(SavedChats[user].Chats, chat)
+		}
+	}
 }
 
 // No Id needed
@@ -302,4 +344,77 @@ func ClearChats(user string) {
 	delete(SavedChats, user)
 
 	SaveChats()
+}
+
+func DeleteChat(user, password, chat string) error {
+	parts := strings.Split(chat, "-")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid chat id")
+	}
+
+	reciever, chatId := parts[0], parts[1]
+
+	SavedChats[user].Mu.Lock()
+	if SavedChats[user].Chats[chat] != nil {
+		delete(SavedChats[user].Chats, chat)
+	}
+	SavedChats[user].Mu.Unlock()
+
+	consts.EventListeners.Mu.Lock()
+	if consts.EventListeners.Events[user] != nil && consts.EventListeners.Events[user][chat] != nil {
+		delete(consts.EventListeners.Events[user], chat)
+	}
+	consts.EventListeners.Mu.Unlock()
+
+	return remoteServer.DeleteChat(user, password, reciever, chatId)
+}
+
+func KickUserFromChat(user, password, chat string) error {
+	log.Println("Kicking user from chat")
+
+	var err error
+
+	parts := strings.Split(chat, "-")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid chat id")
+	}
+
+	reciever, chatId := parts[0], parts[1]
+
+	err = remoteServer.KickUserFromChat(user, password, reciever, chatId)
+	if err != nil {
+		return err
+	}
+
+	consts.EventListeners.Mu.Lock()
+	if consts.EventListeners.Events[user] != nil && consts.EventListeners.Events[user][chat] != nil {
+		delete(consts.EventListeners.Events[user], chat)
+	}
+	consts.EventListeners.Mu.Unlock()
+
+	var savingChat types.ChatType
+	SavedChats[user].Mu.Lock()
+	if SavedChats[user].Chats[chat] != nil {
+		savingChat = *SavedChats[user].Chats[chat]
+		delete(SavedChats[user].Chats, chat)
+	} else {
+		savingChat = types.ChatType{
+			Id:         chatId,
+			Reciever:   reciever,
+			Encryption: consts.EncriptionNo,
+			Messages:   make([]types.Message, 0),
+		}
+	}
+	SavedChats[user].Mu.Unlock()
+
+	var bytesChat []byte
+	if savingChat.Encryption == consts.EncriptionNo {
+		bytesChat, err = json.Marshal(savingChat)
+		if err != nil {
+			return err
+		}
+	}
+	// TODO add other encryptions
+
+	return os.WriteFile(fmt.Sprintf("back/saved/%s-%s.json", user, chat), bytesChat, 0644)
 }
