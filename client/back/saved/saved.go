@@ -2,8 +2,14 @@ package saved
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"math/big"
+	diffiehellman "messengerClient/back/crypto/API/Diffie-Hellman"
+	cryptocontext "messengerClient/back/crypto/API/symmetric"
+	"messengerClient/back/crypto/constants/cryptoType"
+	"messengerClient/back/crypto/constants/paddingType"
 	"messengerClient/back/remoteServer"
 	"messengerClient/consts"
 	"messengerClient/types"
@@ -202,6 +208,111 @@ func GetMessages(user, password, reciever, chatId string) ([]types.Message, erro
 		}
 	}
 
+	if chatId[0] == 'S' && len(messagesOnServer) != 0 {
+		firstMessage := messagesOnServer[0]
+		log.Printf("[BACKEND][GET_MESSAGES] First message: %v", firstMessage)
+		lowerType := strings.ToLower(firstMessage.Type)
+
+		if strings.HasPrefix(lowerType, "magenta-") || strings.HasPrefix(lowerType, "rc6-") {
+			keys := types.Keys{}
+			err = json.Unmarshal(firstMessage.Message, &keys)
+			if err != nil {
+				return nil, err
+			}
+
+			keys.MyPrivateKey, err = diffiehellman.GeneratePrivateKey(keys.Prime)
+			myPublicKey := diffiehellman.GeneratePublicKey(keys.MyPrivateKey, keys.PrimitiveRoot, keys.Prime)
+
+			parts := strings.Split(lowerType, "-")
+			if len(parts) != 3 {
+				return nil, fmt.Errorf("invalid encryption type: %s", lowerType)
+			}
+
+			chatName := fmt.Sprintf("%s-%s", reciever, chatId)
+
+			encryption := parts[0]
+			algorithm := parts[1]
+			padding := parts[2]
+
+			SavedChats[user].Mu.Lock()
+			SavedChats[user].Chats[chatName] = &types.ChatType{
+				Id:         chatId,
+				Reciever:   reciever,
+				Encryption: encryption,
+				Algorithm:  algorithm,
+				Padding:    padding,
+				Keys:       keys,
+				Messages:   make([]types.Message, 0),
+			}
+			SavedChats[user].Mu.Unlock()
+			SaveChats()
+
+			response := types.Message{
+				Type:    "response-key",
+				Author:  user,
+				Message: myPublicKey.Bytes(),
+			}
+
+			ch := remoteServer.SendMessage(user, password, reciever, chatId, response)
+
+			for {
+				val := <-ch
+				if val == -1 {
+					return nil, errors.New("connection closed")
+				}
+				if val == 0 || val == -1000 {
+					break
+				}
+			}
+
+			if len(messagesOnServer) == 1 {
+				return make([]types.Message, 0), nil
+			}
+			messagesOnServer = messagesOnServer[1:]
+		} else if lowerType == "response-key" {
+			recieverPublicKey := big.NewInt(0)
+			recieverPublicKey.SetBytes(firstMessage.Message)
+
+			SavedChats[user].Mu.Lock()
+			SavedChats[user].Chats[fmt.Sprintf("%s-%s", reciever, chatId)].Keys.RecieverPublicKey = recieverPublicKey
+			SavedChats[user].Mu.Unlock()
+			SaveChats()
+
+			if len(messagesOnServer) == 1 {
+				return make([]types.Message, 0), nil
+			}
+			messagesOnServer = messagesOnServer[1:]
+		} else {
+			keys := SavedChats[user].Chats[fmt.Sprintf("%s-%s", reciever, chatId)].Keys
+			encryption := SavedChats[user].Chats[fmt.Sprintf("%s-%s", reciever, chatId)].Encryption
+			algorithm := SavedChats[user].Chats[fmt.Sprintf("%s-%s", reciever, chatId)].Algorithm
+			padding := SavedChats[user].Chats[fmt.Sprintf("%s-%s", reciever, chatId)].Padding
+
+			sessionKey := diffiehellman.ComputeSharedSecret(keys.MyPrivateKey, keys.RecieverPublicKey, keys.Prime)
+			log.Printf("Session key: %s", sessionKey.String())
+
+			for i, message := range messagesOnServer {
+				iv := message.Iv
+
+				decypher, err := cryptocontext.NewSymmetricContext(
+					sessionKey.Bytes(),
+					cryptoType.GetEncryptionMode(algorithm),
+					paddingType.GetPaddingMode(padding),
+					cryptocontext.GetSymmetricMode(encryption),
+					iv)
+
+				if err != nil {
+					return nil, err
+				}
+
+				messagesOnServer[i].Message, err = decypher.Decrypt(message.Message)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+
 	chatOnDisk, ok := SavedChats[user].Chats[fmt.Sprintf("%s-%s", reciever, chatId)]
 	if !ok {
 		if err != nil {
@@ -299,20 +410,30 @@ func NewChat(user, password, reciever, encryption string) (string, error) {
 	id := ""
 	var err error
 
-	switch encryption {
-	case consts.EncriptionNo:
+	algorithm := ""
+	padding := ""
+	var keys *types.Keys
+
+	if encryption == consts.EncriptionNo {
 		id, err = remoteServer.CreateChat(user, password, reciever)
 		if err != nil {
 			return "", err
 		}
+	} else if strings.Contains(encryption, consts.EncriptionMagenta) || strings.Contains(encryption, consts.EncriptionRC6) {
+		parts := strings.Split(encryption, "-")
+		if len(parts) != 3 {
+			return "", fmt.Errorf("invalid encryption type: %s", encryption)
+		}
 
-	case consts.EncriptionMagenta:
-		// TODO
+		id, keys, err = remoteServer.CreateSecretChat(user, password, reciever, encryption)
+		if err != nil {
+			return "", err
+		}
 
-	case consts.EncriptionRC6:
-		// TODO
-
-	default:
+		encryption = parts[0]
+		algorithm = parts[1]
+		padding = parts[2]
+	} else {
 		return "", fmt.Errorf("unknown encryption type: %s", encryption)
 	}
 
@@ -320,7 +441,10 @@ func NewChat(user, password, reciever, encryption string) (string, error) {
 		Id:         id,
 		Reciever:   reciever,
 		Encryption: encryption,
+		Algorithm:  algorithm,
+		Padding:    padding,
 		Messages:   make([]types.Message, 0),
+		Keys:       *keys,
 	}
 
 	if SavedChats[user].Chats[id] != nil {

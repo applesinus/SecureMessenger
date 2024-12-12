@@ -14,7 +14,6 @@ import (
 	"time"
 )
 
-// Done
 func chatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/chats.html")
 	if err != nil {
@@ -49,7 +48,6 @@ func chatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	}
 }
 
-// Done
 func regularChatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/chats.html")
 	if err != nil {
@@ -76,7 +74,6 @@ func regularChatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	}
 }
 
-// Done
 func secretChatsPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 	t, err := template.ParseFiles("front/pages/template.html", "front/pages/blocks_user.html", "front/pages/chats.html")
 	if err != nil {
@@ -118,13 +115,28 @@ func newChatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 		}
 
 		chatType := r.FormValue("chatType")
+
 		switch chatType {
 		case "regular":
-			chatType = consts.EncriptionNo
-		case "magenta":
-			chatType = consts.EncriptionMagenta
-		case "rc6":
-			chatType = consts.EncriptionRC6
+			break
+		case "magenta", "rc6":
+			padding := strings.ToLower(r.FormValue("padding"))
+			if padding != consts.PaddingANSIX923 && padding != consts.PaddingISO10126 &&
+				padding != consts.PaddingPKCS7 && padding != consts.PaddingZeros {
+				http.Redirect(w, r, "/chats/new?alert=Invalid padding", http.StatusSeeOther)
+				return
+			}
+
+			algorithm := strings.ToLower(r.FormValue("algorithm"))
+			if algorithm != consts.AlgorithmCBC && algorithm != consts.AlgorithmCFB &&
+				algorithm != consts.AlgorithmCTR && algorithm != consts.AlgorithmECB &&
+				algorithm != consts.AlgorithmOFB && algorithm != consts.AlgorithmPCBC &&
+				algorithm != consts.AlgorithmRandomDelta {
+				http.Redirect(w, r, "/chats/new?alert=Invalid algorithm", http.StatusSeeOther)
+				return
+			}
+
+			chatType = fmt.Sprintf("%s-%s-%s", chatType, algorithm, padding)
 		default:
 			http.Redirect(w, r, "/chats/new?alert=Invalid chat type", http.StatusSeeOther)
 			return
@@ -185,8 +197,9 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 			}
 
 			log.Printf("[BACKEND][MESSAGE] Sending message: %s", message.Message)
+			log.Printf("%v", saved.SavedChats[data.User].Chats[chatID])
 
-			progressChan = remoteserver.SendMessage(data.User, password.Value, parts[0], parts[1], message)
+			progressChan = remoteserver.SendMessage(data.User, password.Value, parts[0], parts[1], message, *saved.SavedChats[data.User].Chats[chatID])
 			saved.AddMessage(data.User, chatID, message)
 			consts.AddListener(data.User, chatID, message.Id, progressChan)
 		}

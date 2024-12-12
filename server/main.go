@@ -175,6 +175,25 @@ func listenRequests(ctx context.Context, conn *amqp.Connection) {
 				respond(conn, userId, reqId, fmt.Sprintf("ok_%s", id))
 			}
 
+			// Create secret chat
+			if strings.Contains(body, "createSecretChat_") {
+				parts := strings.Split(body, "_")
+				if len(parts) != 2 {
+					log.Printf("[REQUEST LISTENER] Failed to parse request: %s", body)
+					respond(conn, userId, reqId, fmt.Sprintf("not 2 parts but %d", len(parts)))
+				}
+
+				targetUser := parts[1]
+
+				id, err := api.StartChat(ch, userId, targetUser, true)
+				if err != nil {
+					log.Printf("[REQUEST LISTENER] %v", err)
+					respond(conn, userId, reqId, fmt.Sprintf("%v", err))
+				}
+
+				respond(conn, userId, reqId, fmt.Sprintf("ok_%s", id))
+			}
+
 			// Delete chat
 			if strings.Contains(body, "deleteChat_") {
 				parts := strings.Split(body, "_")

@@ -8,6 +8,10 @@ import (
 	"log"
 	"math/rand"
 	"messengerClient/back/crypto"
+	diffiehellman "messengerClient/back/crypto/API/Diffie-Hellman"
+	cryptocontext "messengerClient/back/crypto/API/symmetric"
+	"messengerClient/back/crypto/constants/cryptoType"
+	"messengerClient/back/crypto/constants/paddingType"
 	"messengerClient/types"
 	"net/http"
 	"strings"
@@ -23,16 +27,68 @@ func sendProgress(ch chan int, progress int) {
 	}
 }
 
-func SendMessage(username, password, reciever, chatID string, message types.Message) chan int {
+func SendMessage(username, password, reciever, chatID string, message types.Message, chats ...types.ChatType) chan int {
 	log.Printf("[SERVER][RABBIT] Sending a message: from %s:%s '%s' to %s-%s", username, password, message, reciever, chatID)
 	chProgress := make(chan int)
 
-	go sendingWorker(chProgress, username, password, reciever, chatID, message)
+	go sendingWorker(chProgress, username, password, reciever, chatID, message, chats...)
 
 	return chProgress
 }
 
-func sendingWorker(chProgress chan int, username, password, reciever, chatID string, message types.Message) {
+func encryptingWorker(chProgress chan int, message types.Message, chat types.ChatType) (types.Message, error) {
+	keys := chat.Keys
+	sessionKey := diffiehellman.ComputeSharedSecret(keys.MyPrivateKey, keys.RecieverPublicKey, keys.Prime).Bytes()
+	log.Printf("Session key: %s", sessionKey)
+
+	sendProgress(chProgress, 1010)
+
+	cypherer, err := cryptocontext.NewSymmetricContext(
+		sessionKey,
+		cryptoType.GetEncryptionMode(chat.Algorithm),
+		paddingType.GetPaddingMode(chat.Padding),
+		cryptocontext.GetSymmetricMode(chat.Encryption),
+		nil,
+	)
+
+	if err != nil {
+		return types.Message{}, err
+	}
+
+	sendProgress(chProgress, 1050)
+
+	iv, encryptedMsg, err := cypherer.Encrypt(message.Message)
+
+	if err != nil {
+		return types.Message{}, err
+	}
+
+	sendProgress(chProgress, 1100)
+
+	return types.Message{
+		Id:      message.Id,
+		Message: encryptedMsg,
+		Iv:      iv,
+		Type:    message.Type,
+		Author:  message.Author,
+	}, nil
+}
+
+func sendingWorker(chProgress chan int, username, password, reciever, chatID string, message types.Message, chats ...types.ChatType) {
+	log.Printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Chat id is %s, len(chats) = %d !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!()", chatID, len(chats))
+	if strings.Contains(chatID, "S") && len(chats) > 0 {
+		log.Println("[SERVER][RABBIT] Encrypting a message")
+		encryptedMsg, err := encryptingWorker(chProgress, message, chats[0])
+		if err != nil {
+			chProgress <- -1
+			close(chProgress)
+			return
+		}
+		message = encryptedMsg
+
+		sendProgress(chProgress, 2000)
+	}
+
 	conn, err := connectToRabbit(username, password)
 	if err != nil {
 		chProgress <- -1
@@ -252,9 +308,73 @@ func CreateChat(user, password string, reciever string) (string, error) {
 	return chatId, nil
 }
 
-func CreateSecretChat(sender string, reciever string, cipherType string) error {
-	// TODO
-	return nil
+func CreateSecretChat(user, password, reciever, cipherType string) (string, *types.Keys, error) {
+	resp, err := makeRequest(user, password, fmt.Sprintf("createSecretChat_%s", reciever), "")
+	if err != nil {
+		return "", nil, err
+	}
+
+	if !strings.HasPrefix(resp, "ok_") {
+		return "", nil, fmt.Errorf("failed to create chat: %s", resp)
+	}
+
+	chatId := strings.Replace(strings.TrimPrefix(resp, "ok_"), fmt.Sprintf("%s-", user), "", 1)
+
+	log.Println("Created chat:", chatId)
+
+	p, err := diffiehellman.GeneratePrime(256)
+	if err != nil {
+		return "", nil, err
+	}
+
+	g, err := diffiehellman.GeneratePrimitiveRoot(p)
+	if err != nil {
+		return "", nil, err
+	}
+
+	myPrivateKey, err := diffiehellman.GeneratePrivateKey(p)
+	if err != nil {
+		return "", nil, err
+	}
+
+	myPublicKey := diffiehellman.GeneratePublicKey(myPrivateKey, g, p)
+
+	keys := &types.Keys{
+		Prime:             p,
+		PrimitiveRoot:     g,
+		MyPrivateKey:      nil,
+		RecieverPublicKey: myPublicKey,
+	}
+
+	keysJson, err := json.Marshal(keys)
+	if err != nil {
+		return "", nil, err
+	}
+
+	ch := SendMessage(
+		user, password, reciever, chatId,
+		types.Message{
+			Message: keysJson,
+			Type:    cipherType,
+		},
+	)
+
+	for {
+		val := <-ch
+		if val == -1 {
+			return "", nil, fmt.Errorf("failed to create secret chat")
+		}
+		if val == 0 || val == -1000 {
+			break
+		}
+	}
+
+	keys.MyPrivateKey = myPrivateKey
+	keys.RecieverPublicKey = nil
+
+	log.Println("Created keys")
+
+	return chatId, keys, nil
 }
 
 // RabbitMQ user funcs

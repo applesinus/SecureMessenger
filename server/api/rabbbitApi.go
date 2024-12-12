@@ -282,16 +282,26 @@ func StartChat(ch *amqp.Channel, user1, user2 string, secret bool) (string, erro
 
 	for _, chat := range chats {
 		if strings.HasPrefix(chat, chatPreffix) {
-			chatId, err = strconv.Atoi(strings.Split(chat, "-")[2])
+			currentChatId, err := strconv.Atoi(strings.TrimPrefix(strings.Split(chat, "-")[2], "S"))
 			if err != nil {
 				return "", err
+			}
+			if currentChatId > chatId {
+				chatId = currentChatId
 			}
 		}
 	}
 	chatId++
 
-	ch12 := CreateChatName(user1, user2, fmt.Sprintf("%d", chatId))
-	ch21 := CreateChatName(user2, user1, fmt.Sprintf("%d", chatId))
+	var ch12, ch21 string
+
+	if secret {
+		ch12 = CreateChatName(user1, user2, fmt.Sprintf("S%d", chatId))
+		ch21 = CreateChatName(user2, user1, fmt.Sprintf("S%d", chatId))
+	} else {
+		ch12 = CreateChatName(user1, user2, fmt.Sprintf("%d", chatId))
+		ch21 = CreateChatName(user2, user1, fmt.Sprintf("%d", chatId))
+	}
 
 	err = CreateExchange(ch, ch12, user1, user2)
 	if err != nil {
@@ -312,6 +322,9 @@ func StartChat(ch *amqp.Channel, user1, user2 string, secret bool) (string, erro
 		return "", fmt.Errorf("[CHAT CREATOR] Error creating queue '%s' between %s and %s: %s", chatName, user2, user1, err)
 	}
 
+	if secret {
+		return fmt.Sprintf("S%d", chatId), nil
+	}
 	return fmt.Sprintf("%d", chatId), nil
 }
 

@@ -106,10 +106,25 @@
     <p><h1>Start a chat</h1></p>
     <form id="newChat" method="post">
         <label>This chat will be</label>
-        <select name="chatType">
+        <select id="chatType" name="chatType" oninput="changeVisibility()">
             <option value="regular" selected>Regular</option>
             <option value="magenta">Secret MAGENTA</option>
             <option value="rc6">Secret RC6</option>
+        </select>
+        <select id="algorithm" name="algorithm" style="display: none;">
+            <option value="ECB" selected>ECB</option>
+            <option value="CBC">CBC</option>
+            <option value="PCBC">PCBC</option>
+            <option value="OFB">OFB</option>
+            <option value="CFB">CFB</option>
+            <option value="CTR">CTR</option>
+            <option value="RandomDelta">Random Delta</option>
+        </select>
+        <select id="padding" name="padding" style="display: none;">
+            <option value="Zeros" selected>Zeros</option>
+            <option value="PKCS7">PKCS7</option>
+            <option value="ANSIX923">ANSI X.923</option>
+            <option value="ISO10126">ISO 10126</option>
         </select>
         <label>with</label>
         <input name="name" type="text" placeholder="name">
@@ -120,6 +135,16 @@
 
 {{define "afterbody"}}
 <script>
+    function changeVisibility() {
+        if (document.getElementById("chatType").value == "regular") {
+            document.getElementById("algorithm").style.display = "none";
+            document.getElementById("padding").style.display = "none";
+        } else {
+            document.getElementById("algorithm").style.display = "inline-block";
+            document.getElementById("padding").style.display = "inline-block";
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         message = "{{.Alert}}"
         if (message != "") {

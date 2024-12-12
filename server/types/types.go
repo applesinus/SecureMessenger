@@ -17,11 +17,3 @@ type TopicPermissions struct {
 	Write    string `json:"write"`
 	Read     string `json:"read"`
 }
-
-type Message struct {
-	Id      string `json:"id"`
-	Message []byte `json:"message"`
-
-	Type   string `json:"type"`
-	Author string `json:"author"`
-}

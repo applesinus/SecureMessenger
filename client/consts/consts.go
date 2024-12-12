@@ -49,6 +49,19 @@ const (
 	EncriptionNo      = "no"
 	EncriptionMagenta = "magenta"
 	EncriptionRC6     = "rc6"
+
+	AlgorithmECB         = "ecb"
+	AlgorithmCBC         = "cbc"
+	AlgorithmPCBC        = "pcbc"
+	AlgorithmOFB         = "ofb"
+	AlgorithmCFB         = "cfb"
+	AlgorithmCTR         = "ctr"
+	AlgorithmRandomDelta = "randomdelta"
+
+	PaddingZeros    = "zeros"
+	PaddingPKCS7    = "pkcs7"
+	PaddingANSIX923 = "ansix923"
+	PaddingISO10126 = "iso10126"
 )
 
 var (

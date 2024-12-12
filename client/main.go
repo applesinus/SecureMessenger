@@ -16,6 +16,51 @@ import (
 )
 
 func main() {
+	/*
+		// TEMP
+
+		text := "Alice to Bob! Attention! You're a stinky poo (:"
+
+		// RC6 FULLY DONE
+
+		// MAGENTA NOT DONE:
+		// - ECB & 0/4
+		// - CBC & 0/4
+		// - PCBC & 0/4
+		// - CFB & 0/4
+		// - OFB & 0/4
+		// - CTR & 0/4
+		// - RandomDelta & 0/4
+
+		// DiffieHellman NOT DONE
+
+		cipherer, err := cryptocontext.NewSymmetricContext([]byte("secret"), cryptoType.ECB, paddingType.ANSIX923, RC6.NewRC6(), nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		log.Printf("[MAIN] Encrypting: '%s'", text)
+		iv, encrypted, err := cipherer.Encrypt([]byte(text))
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Println("[MAIN] Encrypted")
+
+		log.Printf("[MAIN] Decrypting:")
+		log.Printf("%v", encrypted)
+		log.Printf("iv=%s", string(iv))
+		decrypted, err := cipherer.Decrypt(encrypted)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		log.Printf("[MAIN] Decrypted: '%s'", string(decrypted))
+		log.Printf("[MAIN] Original: '%s' (%v)", string(text), string(decrypted) == text)
+
+		return
+		// END TEMP
+	*/
+
 	ok := remoteServer.RabbitIsConnected()
 	if !ok {
 		log.Fatal("[MAIN] RabbitMQ and remote server is not connected")
