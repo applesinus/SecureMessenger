@@ -6,6 +6,11 @@ import (
 	"fmt"
 	"log"
 	"messengerClient/back"
+	diffiehellman "messengerClient/back/crypto/API/Diffie-Hellman"
+	cryptocontext "messengerClient/back/crypto/API/symmetric"
+	"messengerClient/back/crypto/constants/cryptoType"
+	"messengerClient/back/crypto/constants/paddingType"
+	magenta "messengerClient/back/crypto/tasks/MAGENTA"
 	"messengerClient/back/remoteServer"
 	"messengerClient/back/users"
 	"os"
@@ -16,50 +21,45 @@ import (
 )
 
 func main() {
-	/*
-		// TEMP
 
-		text := "Alice to Bob! Attention! You're a stinky poo (:"
+	// TEMP
 
-		// RC6 FULLY DONE
+	p, _ := diffiehellman.GeneratePrime(256)
+	g, _ := diffiehellman.GeneratePrimitiveRoot(p)
 
-		// MAGENTA NOT DONE:
-		// - ECB & 0/4
-		// - CBC & 0/4
-		// - PCBC & 0/4
-		// - CFB & 0/4
-		// - OFB & 0/4
-		// - CTR & 0/4
-		// - RandomDelta & 0/4
+	myPrivateKey, _ := diffiehellman.GeneratePrivateKey(p)
+	otherPrivateKey, _ := diffiehellman.GeneratePrivateKey(p)
+	otherPublicKey := diffiehellman.GeneratePublicKey(otherPrivateKey, g, p)
 
-		// DiffieHellman NOT DONE
+	key := diffiehellman.ComputeSharedSecret(myPrivateKey, otherPublicKey, p)
 
-		cipherer, err := cryptocontext.NewSymmetricContext([]byte("secret"), cryptoType.ECB, paddingType.ANSIX923, RC6.NewRC6(), nil)
-		if err != nil {
-			log.Fatal(err)
-		}
+	text := "Alice to Bob! Attention! You're a stinky poo"
 
-		log.Printf("[MAIN] Encrypting: '%s'", text)
-		iv, encrypted, err := cipherer.Encrypt([]byte(text))
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Println("[MAIN] Encrypted")
+	cipherer, err := cryptocontext.NewSymmetricContext(key.Bytes(), cryptoType.ECB, paddingType.ANSIX923, magenta.NewMagenta(), nil)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-		log.Printf("[MAIN] Decrypting:")
-		log.Printf("%v", encrypted)
-		log.Printf("iv=%s", string(iv))
-		decrypted, err := cipherer.Decrypt(encrypted)
-		if err != nil {
-			log.Fatal(err)
-		}
+	log.Printf("[MAIN] Encrypting: '%s'", text)
+	iv, encrypted, err := cipherer.Encrypt([]byte(text))
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("[MAIN] Encrypted")
 
-		log.Printf("[MAIN] Decrypted: '%s'", string(decrypted))
-		log.Printf("[MAIN] Original: '%s' (%v)", string(text), string(decrypted) == text)
+	log.Printf("[MAIN] Decrypting:")
+	log.Printf("%v", encrypted)
+	log.Printf("iv=%s", string(iv))
+	decrypted, err := cipherer.Decrypt(encrypted)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-		return
-		// END TEMP
-	*/
+	log.Printf("[MAIN] Decrypted: '%s'", string(decrypted))
+	log.Printf("[MAIN] Original: '%s' (%v)", string(text), string(decrypted) == text)
+
+	return
+	// END TEMP
 
 	ok := remoteServer.RabbitIsConnected()
 	if !ok {

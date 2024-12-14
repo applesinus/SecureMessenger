@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"messengerClient/back/crypto/constants/cryptoType"
+	magenta "messengerClient/back/crypto/tasks/MAGENTA"
 	"messengerClient/back/crypto/tasks/RC6"
 	"strings"
 )
@@ -76,9 +77,8 @@ func GetSymmetricMode(encryption string) SymmetricEncryptionInterface {
 	switch encryption {
 	case "rc6":
 		return RC6.NewRC6()
-		// TODO
-	/*case "magenta":
-	return Magenta.NewMagenta()*/
+	case "magenta":
+		return magenta.NewMagenta()
 	default:
 		return nil
 	}
