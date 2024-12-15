@@ -76,51 +76,55 @@ func (m *MAGENTA) Expand(key []byte) ([][]byte, error) {
 	return roundKeys, nil
 }
 
-// SymmetricEncrypt шифрует входные данные
 func (m *MAGENTA) SymmetricEncrypt(input []byte) ([]byte, error) {
 	if len(input)%16 != 0 {
-		return nil, errors.New("длина входных данных должна быть кратна 16 байтам")
+		return nil, errors.New("length of input must be a multiple of 16")
 	}
+
 	output := make([]byte, len(input))
 	for i := 0; i < len(input); i += 16 {
 		x1 := input[i : i+8]
 		x2 := input[i+8 : i+16]
 		x1Enc, x2Enc := m.encryptBlock(x1, x2)
+
 		copy(output[i:i+8], x1Enc)
 		copy(output[i+8:i+16], x2Enc)
 	}
+
 	return output, nil
 }
 
-// SymmetricDecrypt расшифровывает входные данные
 func (m *MAGENTA) SymmetricDecrypt(input []byte) ([]byte, error) {
 	if len(input)%16 != 0 {
-		return nil, errors.New("длина входных данных должна быть кратна 16 байтам")
+		return nil, errors.New("length of input must be a multiple of 16")
 	}
 	output := make([]byte, len(input))
+
 	for i := 0; i < len(input); i += 16 {
 		x1 := input[i : i+8]
 		x2 := input[i+8 : i+16]
 		x1Dec, x2Dec := m.decryptBlock(x1, x2)
+
 		copy(output[i:i+8], x1Dec)
 		copy(output[i+8:i+16], x2Dec)
 	}
+
 	return output, nil
 }
 
-// encryptBlock шифрует один блок данных (8 байт X1 и 8 байт X2)
 func (m *MAGENTA) encryptBlock(X1, X2 []byte) ([]byte, []byte) {
 	X1Copy := append([]byte{}, X1...)
 	X2Copy := append([]byte{}, X2...)
+
 	for r := 0; r < m.nRounds; r++ {
 		Kn := m.roundKeys[r]
 		FResult := F(X2Copy, Kn)
 		X1Copy, X2Copy = X2Copy, xorBlocks8(X1Copy, FResult)
 	}
+
 	return X1Copy, X2Copy
 }
 
-// decryptBlock расшифровывает один блок данных (8 байт X1 и 8 байт X2)
 func (m *MAGENTA) decryptBlock(X1, X2 []byte) ([]byte, []byte) {
 	X1Copy := append([]byte{}, X1...)
 	X2Copy := append([]byte{}, X2...)
@@ -132,7 +136,6 @@ func (m *MAGENTA) decryptBlock(X1, X2 []byte) ([]byte, []byte) {
 	return X1Copy, X2Copy
 }
 
-// xorBlocks8: XOR двух 8-байтовых блоков
 func xorBlocks8(a, b []byte) []byte {
 	result := make([]byte, 8)
 	for i := 0; i < 8; i++ {
@@ -141,9 +144,7 @@ func xorBlocks8(a, b []byte) []byte {
 	return result
 }
 
-// F(X2Kn): Возвращает первые 8 байтов от S(C(3, X2Kn))
 func F(X2, Kn []byte) []byte {
-	// Объединяем X2 и Kn в один 16-байтовый блок
 	var input [16]byte
 	copy(input[:8], X2)
 	copy(input[8:], Kn)
@@ -158,7 +159,6 @@ func F(X2, Kn []byte) []byte {
 	return result
 }
 
-// SBox — пример S-блока, используем простую таблицу для демонстрации
 var SBox = [256]byte{
 	99, 124, 119, 123, 242, 107, 111, 197,
 	48, 1, 103, 43, 254, 215, 171, 118,
@@ -194,22 +194,21 @@ var SBox = [256]byte{
 	65, 153, 45, 15, 176, 84, 187, 22,
 }
 
-// f(x): Возвращает элемент из S-блока
 func f(x byte) byte {
 	return SBox[x]
 }
 
-// A(x, y): A(x, y) = f(x ⊕ f(y))
+// A(x, y) = f(x ⊕ f(y))
 func A(x, y byte) byte {
 	return f(x ^ f(y))
 }
 
-// PE(x, y): Конкатенирует результаты A(x, y) и A(y, x)
+// PE(x, y)
 func PE(x, y byte) [2]byte {
 	return [2]byte{A(x, y), A(y, x)}
 }
 
-// П(X): Применяет PE для байтов X и конкатенирует
+// П(X)
 func П(X [16]byte) [16]byte {
 	var result [16]byte
 	for i := 0; i < 8; i++ {
@@ -220,7 +219,7 @@ func П(X [16]byte) [16]byte {
 	return result
 }
 
-// T(X): Четырехкратное применение функции П
+// T(X)
 func T(X [16]byte) [16]byte {
 	for i := 0; i < 4; i++ {
 		X = П(X)
@@ -228,17 +227,17 @@ func T(X [16]byte) [16]byte {
 	return X
 }
 
-// S(X): Перестановка байтов X (четные и нечетные отдельно)
+// S(X)
 func S(X [16]byte) [16]byte {
 	var result [16]byte
 	for i := 0; i < 8; i++ {
-		result[i] = X[2*i]     // Четные байты
-		result[8+i] = X[2*i+1] // Нечетные байты
+		result[i] = X[2*i]
+		result[8+i] = X[2*i+1]
 	}
 	return result
 }
 
-// C(k, X): Рекурсивная функция
+// C(k, X)
 func C(k int, X [16]byte) [16]byte {
 	if k == 1 {
 		return T(X)
@@ -247,7 +246,6 @@ func C(k int, X [16]byte) [16]byte {
 	return T(xorBlocks(X, S(prev)))
 }
 
-// xorBlocks: XOR двух 16-байтовых блоков
 func xorBlocks(a, b [16]byte) [16]byte {
 	var result [16]byte
 	for i := 0; i < 16; i++ {
