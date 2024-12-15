@@ -118,7 +118,7 @@ func newChatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 
 		switch chatType {
 		case "regular":
-			break
+			chatType = consts.EncriptionNo
 		case "magenta", "rc6":
 			padding := strings.ToLower(r.FormValue("padding"))
 			if padding != consts.PaddingANSIX923 && padding != consts.PaddingISO10126 &&
@@ -197,7 +197,7 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 			}
 
 			log.Printf("[BACKEND][MESSAGE] Sending message: %s", message.Message)
-			log.Printf("%v", saved.SavedChats[data.User].Chats[chatID])
+			//log.Printf("%v", saved.SavedChats[data.User].Chats[chatID])
 
 			progressChan = remoteserver.SendMessage(data.User, password.Value, parts[0], parts[1], message, *saved.SavedChats[data.User].Chats[chatID])
 			saved.AddMessage(data.User, chatID, message)
@@ -224,7 +224,7 @@ func chatPage(w http.ResponseWriter, r *http.Request, data types.Data) {
 
 			log.Println("[BACKEND][MESSAGE] Sending file")
 
-			progressChan, chBytes := remoteserver.SendFile(data.User, password.Value, parts[0], parts[1], message, r)
+			progressChan, chBytes := remoteserver.SendFile(data.User, password.Value, parts[0], parts[1], message, r, *saved.SavedChats[data.User].Chats[chatID])
 
 			saved.AddMessage(data.User, chatID, message)
 			consts.AddListener(data.User, chatID, message.Id, progressChan)

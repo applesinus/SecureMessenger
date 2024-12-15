@@ -3,7 +3,6 @@ package cryptocontext
 import (
 	"crypto/rand"
 	"fmt"
-	"log"
 	"messengerClient/back/crypto/constants/cryptoType"
 	magenta "messengerClient/back/crypto/tasks/MAGENTA"
 	"messengerClient/back/crypto/tasks/RC6"
@@ -141,7 +140,7 @@ func (bcp *BlockCipherProcessor) Decrypt(
 		return nil, err
 	}
 
-	log.Printf("Decrypted: %s", decrypted)
+	//log.Printf("Decrypted: %s", decrypted)
 
 	if bcp.cipher.mode == cryptoType.CFB || bcp.cipher.mode == cryptoType.OFB || bcp.cipher.mode == cryptoType.CTR {
 		return decrypted, nil

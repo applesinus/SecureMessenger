@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"log"
 )
 
 const (
@@ -15,7 +14,7 @@ const (
 
 func (bcp *BlockCipherProcessor) encryptECB(input []byte) ([]byte, error) {
 	padded := bcp.padder.ApplyPadding(input, blockSizeConst, bcp.cipher.padding)
-	log.Printf("Padded: %s", padded)
+	//log.Printf("Padded: %s", padded)
 	blockSize := blockSizeConst
 	encrypted := make([]byte, len(padded))
 
@@ -38,7 +37,7 @@ func (bcp *BlockCipherProcessor) encryptECB(input []byte) ([]byte, error) {
 			end := min(bs+blockSize, len(padded))
 			encrypdedBlock, err := bcp.cipher.encryptionObject.SymmetricEncrypt(padded[bs:end])
 			if err != nil {
-				log.Fatal("Error encrypting block", err)
+				ch <- nil
 			}
 			ch <- encrypdedBlock
 		}(bs)
@@ -46,6 +45,9 @@ func (bcp *BlockCipherProcessor) encryptECB(input []byte) ([]byte, error) {
 
 	for bs := 0; bs < len(padded); bs += blockSize {
 		encryptedBlock := <-blocks[bs].ch
+		if encryptedBlock == nil {
+			return nil, fmt.Errorf("failed to encrypt block: %v", blocks[bs].block)
+		}
 		end := min(bs+blockSize, len(padded))
 		copy(encrypted[bs:end], encryptedBlock)
 	}
@@ -59,7 +61,7 @@ func (bcp *BlockCipherProcessor) encryptCBC(input []byte, iv []byte) ([]byte, er
 	}
 
 	padded := bcp.padder.ApplyPadding(input, blockSizeConst, bcp.cipher.padding)
-	log.Printf("Padded: %s", padded)
+	//log.Printf("Padded: %s", padded)
 	blockSize := blockSizeConst
 	encrypted := make([]byte, 0)
 	currentIV := make([]byte, blockSize)
@@ -72,7 +74,7 @@ func (bcp *BlockCipherProcessor) encryptCBC(input []byte, iv []byte) ([]byte, er
 
 		encrypdedBlock, err := bcp.cipher.encryptionObject.SymmetricEncrypt(padded[bs : bs+blockSize])
 		if err != nil {
-			log.Fatal("Error encrypting block", err)
+			return nil, fmt.Errorf("failed to encrypt block: %v", err)
 		}
 		encrypted = append(encrypted, encrypdedBlock...)
 
@@ -88,7 +90,7 @@ func (bcp *BlockCipherProcessor) encryptPCBC(input []byte, iv []byte) ([]byte, e
 	}
 
 	padded := bcp.padder.ApplyPadding(input, blockSizeConst, bcp.cipher.padding)
-	log.Printf("Padded: %s", padded)
+	//log.Printf("Padded: %s", padded)
 	blockSize := blockSizeConst
 	encrypted := make([]byte, len(padded))
 
@@ -105,7 +107,7 @@ func (bcp *BlockCipherProcessor) encryptPCBC(input []byte, iv []byte) ([]byte, e
 
 		encryptedBlock, err := bcp.cipher.encryptionObject.SymmetricEncrypt(xorBlock)
 		if err != nil {
-			log.Fatal("Error encrypting block", err)
+			return nil, fmt.Errorf("failed to encrypt block: %v", err)
 		}
 
 		copy(encrypted[bs:bs+blockSize], encryptedBlock)
@@ -127,7 +129,7 @@ func (bcp *BlockCipherProcessor) encryptCFB(input []byte, iv []byte) ([]byte, er
 	for i := 0; i < len(input); i += blockSizeConst {
 		encryptedIV, err := bcp.cipher.encryptionObject.SymmetricEncrypt(currentIV)
 		if err != nil {
-			log.Fatal("Error encrypting block", err)
+			return nil, fmt.Errorf("failed to encrypt block: %v", err)
 		}
 
 		end := min(i+blockSizeConst, len(input))
@@ -155,7 +157,7 @@ func (bcp *BlockCipherProcessor) encryptOFB(input []byte, iv []byte) ([]byte, er
 	for i := 0; i < len(input); i += blockSizeConst {
 		currentIV, err := bcp.cipher.encryptionObject.SymmetricEncrypt(currentIV)
 		if err != nil {
-			log.Fatal("Error encrypting block", err)
+			return nil, fmt.Errorf("failed to encrypt block: %v", err)
 		}
 
 		end := min(i+blockSizeConst, len(input))
@@ -179,7 +181,7 @@ func (bcp *BlockCipherProcessor) encryptCTR(input []byte, iv []byte) ([]byte, er
 	for i := 0; i < len(input); i += blockSizeConst {
 		keyStream, err := bcp.cipher.encryptionObject.SymmetricEncrypt(counter)
 		if err != nil {
-			log.Fatal("Error encrypting block", err)
+			return nil, fmt.Errorf("failed to encrypt block: %v", err)
 		}
 
 		end := min(i+blockSizeConst, len(input))
@@ -199,7 +201,7 @@ func (bcp *BlockCipherProcessor) encryptRandomDelta(input []byte, iv []byte) ([]
 	}
 
 	padded := bcp.padder.ApplyPadding(input, blockSizeConst, bcp.cipher.padding)
-	log.Printf("Padded: %s", padded)
+	//log.Printf("Padded: %s", padded)
 	blockSize := blockSizeConst
 
 	encrypted := make([]byte, len(padded)+len(padded)/blockSize*blockSize)
@@ -261,7 +263,7 @@ func (bcp *BlockCipherProcessor) decryptECB(input []byte) ([]byte, error) {
 			end := min(bs+blockSize, len(input))
 			encrypdedBlock, err := bcp.cipher.encryptionObject.SymmetricDecrypt(input[bs:end])
 			if err != nil {
-				log.Fatal("Error encrypting block", err)
+				ch <- nil
 			}
 			ch <- encrypdedBlock
 		}(bs)
@@ -269,6 +271,9 @@ func (bcp *BlockCipherProcessor) decryptECB(input []byte) ([]byte, error) {
 
 	for bs := 0; bs < len(input); bs += blockSize {
 		encryptedBlock := <-blocks[bs].ch
+		if encryptedBlock == nil {
+			return nil, errors.New("failed to decrypt block")
+		}
 		end := min(bs+blockSize, len(input))
 		copy(decrypted[bs:end], encryptedBlock)
 	}
@@ -293,7 +298,7 @@ func (bcp *BlockCipherProcessor) decryptCBC(input []byte, iv []byte) ([]byte, er
 	for bs := 0; bs < len(input); bs += blockSize {
 		decBlock, err := bcp.cipher.encryptionObject.SymmetricDecrypt(input[bs : bs+blockSize])
 		if err != nil {
-			log.Fatal("Error encrypting block", err)
+			return nil, fmt.Errorf("failed to decrypt block: %v", err)
 		}
 
 		for i := 0; i < blockSize; i++ {
@@ -326,7 +331,7 @@ func (bcp *BlockCipherProcessor) decryptPCBC(input []byte, iv []byte) ([]byte, e
 
 		decryptedBlock, err := bcp.cipher.encryptionObject.SymmetricDecrypt(currentCipherBlock)
 		if err != nil {
-			log.Fatal("Error decrypting block", err)
+			return nil, fmt.Errorf("failed to decrypt block: %v", err)
 		}
 
 		for i := 0; i < blockSize; i++ {
@@ -351,7 +356,7 @@ func (bcp *BlockCipherProcessor) decryptCFB(input []byte, iv []byte) ([]byte, er
 	for i := 0; i < len(input); i += blockSizeConst {
 		encryptedIV, err := bcp.cipher.encryptionObject.SymmetricEncrypt(currentIV)
 		if err != nil {
-			log.Fatal("Error encrypting block", err)
+			return nil, fmt.Errorf("failed to decrypt block: %v", err)
 		}
 
 		end := min(i+blockSizeConst, len(input))

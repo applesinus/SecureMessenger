@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"messengerServer/consts"
 	"messengerServer/types"
 	"net/http"
@@ -64,14 +63,14 @@ func CreateUser(ch *amqp.Channel, name, password string) error {
 	}
 
 	// Logging new user registration
-	log.Printf("[SERVER][USERS] User registered: %s", name)
+	//log.Printf("[SERVER][USERS] User registered: %s", name)
 
 	return nil
 }
 
 func setUser(name, password string) error {
 	url := fmt.Sprintf("%s/users/%s", consts.RabbitmqAPI, name)
-	log.Println(url)
+	//log.Println(url)
 
 	user := types.User{
 		Name:     name,
@@ -108,7 +107,7 @@ func setUser(name, password string) error {
 
 func setVhostPermission(name string, permission types.Permission) error {
 	url := fmt.Sprintf("%s/permissions/%s/%s", consts.RabbitmqAPI, consts.Vhost, name)
-	log.Println(url)
+	//log.Println(url)
 
 	body, err := json.Marshal(permission)
 	if err != nil {
@@ -186,7 +185,7 @@ func RevokePermissions(user, exchange string) error {
 }
 
 func CreateQueue(ch *amqp.Channel, name string) error {
-	log.Printf("[QUEUE] Creating queue: '%s'", name)
+	//log.Printf("[QUEUE] Creating queue: '%s'", name)
 
 	_, err := ch.QueueDeclare(
 		name,
@@ -395,7 +394,7 @@ func getAllExchanges() ([]string, error) {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	log.Printf("[EXCHANGE] Got %v", exchanges)
+	//log.Printf("[EXCHANGE] Got %v", exchanges)
 
 	var exchangeNames []string
 	for _, queue := range exchanges {

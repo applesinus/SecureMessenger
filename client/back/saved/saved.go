@@ -210,7 +210,7 @@ func GetMessages(user, password, reciever, chatId string) ([]types.Message, erro
 
 	if chatId[0] == 'S' && len(messagesOnServer) != 0 {
 		firstMessage := messagesOnServer[0]
-		log.Printf("[BACKEND][GET_MESSAGES] First message: %v", firstMessage)
+		//log.Printf("[BACKEND][GET_MESSAGES] First message: %v", firstMessage)
 		lowerType := strings.ToLower(firstMessage.Type)
 
 		if strings.HasPrefix(lowerType, "magenta-") || strings.HasPrefix(lowerType, "rc6-") {
@@ -289,7 +289,7 @@ func GetMessages(user, password, reciever, chatId string) ([]types.Message, erro
 			padding := SavedChats[user].Chats[fmt.Sprintf("%s-%s", reciever, chatId)].Padding
 
 			sessionKey := diffiehellman.ComputeSharedSecret(keys.MyPrivateKey, keys.RecieverPublicKey, keys.Prime)
-			log.Printf("Session key: %s", sessionKey.String())
+			//log.Printf("Session key: %s", sessionKey.String())
 
 			for i, message := range messagesOnServer {
 				iv := message.Iv
@@ -412,7 +412,7 @@ func NewChat(user, password, reciever, encryption string) (string, error) {
 
 	algorithm := ""
 	padding := ""
-	var keys *types.Keys
+	var keys *types.Keys = nil
 
 	if encryption == consts.EncriptionNo {
 		id, err = remoteServer.CreateChat(user, password, reciever)
@@ -444,7 +444,10 @@ func NewChat(user, password, reciever, encryption string) (string, error) {
 		Algorithm:  algorithm,
 		Padding:    padding,
 		Messages:   make([]types.Message, 0),
-		Keys:       *keys,
+	}
+
+	if keys != nil {
+		newChat.Keys = *keys
 	}
 
 	if SavedChats[user].Chats[id] != nil {

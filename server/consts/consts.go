@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	RabbitmqAPI = "http://localhost:15672/api"
+	RabbitmqAPI = "http://rabbitmq:15672/api"
 	Vhost       = "%2F"
 )
 

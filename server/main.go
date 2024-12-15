@@ -21,7 +21,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	conn, err := amqp.Dial(fmt.Sprintf("amqp://%s:%s@localhost:5672/", consts.RabbitmqUser, consts.RabbitmqPassword))
+	conn, err := amqp.Dial(fmt.Sprintf("amqp://%s:%s@rabbitmq:5672/", consts.RabbitmqUser, consts.RabbitmqPassword))
 	if consts.LogIfError(err, "Failed to connect to RabbitMQ") {
 		return
 	}
@@ -58,8 +58,16 @@ func main() {
 
 func listenRequests(ctx context.Context, conn *amqp.Connection) {
 	ch, err := conn.Channel()
-	if consts.LogIfError(err, "[REQUEST LISTENER] Failed to open a channel") {
-		return
+	idx := 0
+	for err != nil {
+		idx++
+		if idx > 30 {
+			log.Printf("[REQUEST LISTENER] Failed to connect to RabbitMQ in 30 attempts: %v", err)
+			return
+		}
+
+		time.Sleep(time.Second)
+		ch, err = conn.Channel()
 	}
 	defer ch.Close()
 
@@ -82,7 +90,7 @@ func listenRequests(ctx context.Context, conn *amqp.Connection) {
 			return
 
 		case msg := <-messages:
-			log.Printf("Received a request: %s", msg.Body)
+			//log.Printf("Received a request: %s", msg.Body)
 			body := string(msg.Body)
 
 			userId := msg.Headers["username"].(string)

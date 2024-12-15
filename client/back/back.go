@@ -4,11 +4,8 @@ import (
 	"context"
 	"log"
 	"messengerClient/back/saved"
-	"messengerClient/consts"
 	"messengerClient/front/handlers"
 	"net/http"
-	"os/exec"
-	"runtime"
 	"strconv"
 	"sync"
 )
@@ -39,23 +36,15 @@ func Start(ctx context.Context, wg *sync.WaitGroup) {
 func startClient(port int, errCh chan error) {
 	log.Printf("[BACKEND][SERVER] Starting")
 
-	ipStarter := ""
+	/*ipStarter := ""
 	if runtime.GOOS == "linux" {
 		ipStarter = consts.LocalIP
-		err := exec.Command("xdg-open", "http://"+ipStarter+strconv.Itoa(port)).Start()
-		if err != nil {
-			log.Printf("[BACKEND][SERVER] Error opening browser: %s", err)
-		}
 	} else {
 		ipStarter = consts.LocalHost
-		err := exec.Command("rundll32", "url.dll,FileProtocolHandler", "http://"+ipStarter+strconv.Itoa(port)).Start()
-		if err != nil {
-			log.Printf("[BACKEND][SERVER] Error opening browser: %s", err)
-		}
-	}
+	}*/
 
 	server := &http.Server{
-		Addr: ipStarter + strconv.Itoa(port),
+		Addr: /*ipStarter + */ ":" + strconv.Itoa(port),
 	}
 	serverIsRunning := make(chan bool)
 	go func(serverIsRunning chan bool) {
@@ -67,7 +56,7 @@ func startClient(port int, errCh chan error) {
 	}(serverIsRunning)
 	<-serverIsRunning
 	close(serverIsRunning)
-	log.Printf("[BACKEND][SERVER] Listening on port %d", port)
+	log.Printf("[BACKEND][SERVER] Listening on %s", server.Addr)
 
 	handlers.Init()
 }
