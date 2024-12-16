@@ -39,11 +39,13 @@ func NewSymmetricContext(
 		return nil, err
 	}
 
-	if ctx.mode != cryptoType.ECB && iv == nil {
-		ctx.iv = GenerateIV()
-	}
-
-	if ctx.mode == cryptoType.ECB && iv != nil {
+	if ctx.mode != cryptoType.ECB {
+		if iv == nil {
+			ctx.iv = GenerateIV()
+		} else {
+			ctx.iv = iv
+		}
+	} else {
 		ctx.iv = nil
 	}
 
